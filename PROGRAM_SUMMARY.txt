@@ -22,6 +22,8 @@ FlowCell is a Windows desktop automation shell for creative and system workflows
 Open-source repository model
 ----------------------------
 The repository is now arranged for public GitHub use. Tracked source, docs, examples, and tooling remain in the repo. Mutable user state, machine-specific settings, logs, and build artifacts are kept in ignored local storage.
+FlowCell also now includes donation support through .github\FUNDING.yml, a README support link, and a Stripe Payment Link.
+Contributor guidance now explicitly requires relative repo-path resolution instead of tracked machine-specific absolute paths.
 
 Top-level folders:
 - Blender: preserved Blender integration area, including FlowCell button wrappers and a sanitized public config.
@@ -107,7 +109,7 @@ Legacy Blender add-on folders and the old repo-root Blender folder are treated a
 
 Startup and launcher model
 --------------------------
-The normal root launcher remains D:\Dev\workspace\Codex\flowcell\run.cmd. It delegates to FlowCell\run.cmd.
+The normal root launcher remains run.cmd at the repository root. It delegates to FlowCell\run.cmd.
 
 FlowCell\run.cmd:
 - launches FlowCellUI.ps1 with Windows PowerShell and STA mode when started without backend arguments
@@ -159,6 +161,8 @@ Blender remains structured around:
 - Blender\config.json as the sanitized public default config
 - FlowCell\local\private\blender.config.local.json as the machine-specific override for live bridge paths
 
+Generated Blender wrapper scripts resolve the dispatcher relative to their own folder instead of hardcoding a machine-local repo path.
+
 The public example for Blender config now belongs in:
 - examples\Blender\config.example.json
 
@@ -184,6 +188,9 @@ Some Windows helper scripts still depend on machine-local tools, but the tracked
 - monitor layout helper scripts now expect FLOWCELL_DUMMY_MONITOR_SCRIPT locally and can optionally use FLOWCELL_DUMMY_MONITOR_TARGET_DISPLAY.
 - sync_recent_creative_shortcuts.ps1 now uses local environment overrides for recent-root and watch-root locations, with neutral per-user defaults instead of personal drive paths.
 - file_update_github.ps1 now prefers the active Explorer repo, then clipboard, then the FlowCell repo itself, and finally a folder picker to find a Git repo. It stages changes, prompts for a commit message when needed, pushes the current branch to GitHub, and shows a visible success or failure message.
+- monitor layout launcher entry scripts now resolve their sibling dialog scripts from $PSScriptRoot instead of a fixed machine path.
+
+Illustrator 3D test scripts now resolve their helper macro wrappers from the repo's FlowCell\helpers folder relative to the script location instead of a user-specific codexapp path.
 
 UI-dependent Windows scripts now launch through the backend STA path when their filename indicates dialogs or interactive prompts, including file_update_github.ps1, fix_this_folder_from_explorer.ps1, and the monitor layout dialog helpers.
 

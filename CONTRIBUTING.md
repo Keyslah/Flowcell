@@ -2,10 +2,11 @@
 
 ## Ground Rules
 
-- Keep the project rooted at `D:\Dev\workspace\Codex\flowcell`.
+- Keep the project rooted in this repository folder.
 - Do not reorganize anything outside this folder.
 - Update `PROGRAM_SUMMARY.txt` in the same change whenever FlowCell behavior, structure, or workflows change.
 - Do not commit EXEs, logs, personal paths, private settings, or other mutable local state.
+- Do not hardcode machine-specific absolute paths in tracked files. Resolve repo files relative to the current script, its folder, or the repository root instead.
 
 ## Repository Expectations
 
@@ -14,6 +15,7 @@
 - Illustrator user-facing scripts should stay directly in `Illustrator/`.
 - Windows user-facing scripts should stay directly in `Windows/`.
 - Internal Illustrator helpers belong in `Illustrator/HelperScripts/`.
+- Relative paths inside the repo are expected and normal. If you move files that other scripts resolve by location, update those references in the same change.
 
 ## Script Naming
 

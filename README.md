@@ -4,6 +4,8 @@ FlowCell is a Windows desktop automation shell for creative and system workflows
 
 This repository is structured for public source control. Publishable source stays in the repo. User state, bindings, popout layouts, saved panels, logs, generated temp files, private local settings, build output, and EXE artifacts live under `FlowCell/local/`, which is ignored by Git.
 
+Support FlowCell: [Donate via Stripe](https://buy.stripe.com/6oUcN66HVcIjcRSgSM8AE00)
+
 ## Repository Layout
 
 - `FlowCell/`: main app code, launcher scripts, helpers, and vendored dependencies.
@@ -59,6 +61,10 @@ When a script is added through FlowCell's panel UI, the `Add Script` button open
 - `run.cmd` at the repo root delegates to `FlowCell/run.cmd`.
 - `FlowCell/run.cmd` launches the PowerShell UI or the AutoHotkey backend.
 - Launcher logs are written to `FlowCell/local/logs/`.
+
+## Support FlowCell
+
+[Donate to support FlowCell](https://buy.stripe.com/6oUcN66HVcIjcRSgSM8AE00)
 
 ## Releases
 
