@@ -1,3 +1,4 @@
+Support FlowCell: [![Donate via Stripe](https://img.shields.io/badge/Donate-Stripe-635BFF?logo=stripe&logoColor=white)](https://buy.stripe.com/aFa3cw2rF5fR7xyauo8AE01)
 # FlowCell
 
 FlowCell is a Windows desktop automation shell for creative and system workflows. It uses a PowerShell WPF UI and an AutoHotkey v2 backend to manage program tabs, editable panels, launcher buttons, hotkeys, macros, popout layouts, and Blender bridge actions.
