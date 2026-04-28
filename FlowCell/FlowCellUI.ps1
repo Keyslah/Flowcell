@@ -1152,7 +1152,7 @@ function Get-DefaultProgramTabs {
     return @(
         (New-FlowCellProgramTab -Id 1 -Label 'Illustrator' -ScriptFolder $script:IllustratorScriptsDir -ProgramType 'adobe_direct_script_runner' -RunMethod 'illustrator_direct' -AllowedScriptExtensions @('.jsx', '.js') -DefaultPanels @('Layers', 'Files', 'Utility')),
         (New-FlowCellProgramTab -Id 2 -Label 'Windows' -ScriptFolder (Join-Path $script:FlowCellHomeRoot 'Windows') -ProgramType 'generic' -RunMethod 'generic' -DefaultPanels @('Files', 'Utility')),
-        (New-FlowCellProgramTab -Id 3 -Label 'Blender' -ScriptFolder (Join-Path $script:FlowCellHomeRoot 'Blender') -ProgramType 'bridge_runner' -RunMethod 'blender_bridge' -AllowedScriptExtensions @('.ps1', '.py', '.blend', '.exe', '.lnk') -BridgeFolder (Join-Path $script:FlowCellHomeRoot 'Blender') -DefaultPanels @('Collections', 'Files', 'Utility')),
+        (New-FlowCellProgramTab -Id 3 -Label 'Blender' -ScriptFolder (Get-FlowCellBlenderScriptsFolder) -ProgramType 'bridge_runner' -RunMethod 'blender_bridge' -AllowedScriptExtensions @('.ps1', '.py', '.blend', '.exe', '.lnk') -BridgeFolder (Join-Path $script:FlowCellHomeRoot 'Blender') -DefaultPanels @('Collections', 'Files', 'Utility')),
         (New-FlowCellProgramTab -Id 4 -Label 'Photoshop' -ScriptFolder $script:PhotoshopScriptsDir -ProgramType 'adobe_direct_script_runner' -RunMethod 'photoshop_direct' -AllowedScriptExtensions @('.jsx', '.js') -DefaultPanels @('Layers', 'Files', 'Utility'))
     )
 }
@@ -1628,10 +1628,29 @@ function Enable-FlowCellTaskbarCloseSupport($Window) {
     }.GetNewClosure())
 }
 
+function Get-FlowCellBlenderScriptsFolder {
+    return (Join-Path $script:FlowCellHomeRoot 'Blender\FlowCellButtons')
+}
+
+function Test-FlowCellBlenderLegacyScriptPath([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+    $normalizedPath = Get-FlowCellNormalizedPath $Path
+    $managedFolder = Get-FlowCellNormalizedPath (Get-FlowCellBlenderScriptsFolder)
+    if ($managedFolder -and $normalizedPath -eq $managedFolder) { return $false }
+
+    $legacyRepoFolder = Get-FlowCellNormalizedPath (Join-Path $script:FlowCellHomeRoot 'Blender')
+    if ($legacyRepoFolder -and $normalizedPath -eq $legacyRepoFolder) { return $true }
+
+    $legacyLocalFolder = Get-FlowCellNormalizedPath (Join-Path $script:FlowCellLocalAppDataRoot 'Programs\Blender\Scripts')
+    if ($legacyLocalFolder -and $normalizedPath -eq $legacyLocalFolder) { return $true }
+
+    return ($normalizedPath -match '\\appdata\\roaming\\blender foundation\\blender\\[^\\]+\\scripts\\addons(?:\\.*)?$')
+}
+
 function Get-ProgramDefaultScriptFolder([string]$Label) {
     switch (Get-ProgramLabelKey $Label) {
         'illustrator' { return $script:IllustratorScriptsDir }
-        'blender' { return (Join-Path $script:FlowCellHomeRoot 'Blender') }
+        'blender' { return (Get-FlowCellBlenderScriptsFolder) }
         'photoshop' { return $script:PhotoshopScriptsDir }
         'windows' { return (Join-Path $script:FlowCellHomeRoot 'Windows') }
         default { return $script:ProjectRoot }
@@ -1651,13 +1670,14 @@ function Get-FlowCellDisplayButtonLabelFromPath([string]$Path) {
 }
 
 function Get-ProgramInitialScriptFolder($ProgramTab) {
+    $label = if ($ProgramTab -and $ProgramTab.PSObject.Properties['Label']) { [string]$ProgramTab.Label } else { '' }
     if ($ProgramTab -and $ProgramTab.PSObject.Properties['ScriptFolder']) {
         $scriptFolder = [string]$ProgramTab.ScriptFolder
-        if (-not [string]::IsNullOrWhiteSpace($scriptFolder) -and (Test-Path -LiteralPath $scriptFolder -PathType Container)) {
+        $isLegacyBlenderFolder = ((Get-ProgramLabelKey $label) -eq 'blender') -and (Test-FlowCellBlenderLegacyScriptPath $scriptFolder)
+        if (-not $isLegacyBlenderFolder -and -not [string]::IsNullOrWhiteSpace($scriptFolder) -and (Test-Path -LiteralPath $scriptFolder -PathType Container)) {
             return $scriptFolder
         }
     }
-    $label = if ($ProgramTab -and $ProgramTab.PSObject.Properties['Label']) { [string]$ProgramTab.Label } else { '' }
     return (Get-ProgramDefaultScriptFolder -Label $label)
 }
 
@@ -8676,6 +8696,40 @@ function Migrate-FlowCellIllustratorScriptReferences {
     }
 }
 
+function Migrate-FlowCellBlenderScriptFolders {
+    if (-not $script:State -or -not $script:FlowCellState) { return }
+    $managedFolder = Ensure-FlowCellDirectory -Path (Get-FlowCellBlenderScriptsFolder)
+    $normalizedManagedFolder = Get-FlowCellNormalizedPath $managedFolder
+    $changed = $false
+
+    foreach ($programTab in @($script:State.ProgramTabs)) {
+        $currentScriptFolder = if ($programTab.PSObject.Properties['ScriptFolder']) { [string]$programTab.ScriptFolder } else { '' }
+        if (-not (Test-FlowCellBlenderLegacyScriptPath $currentScriptFolder)) { continue }
+        if ((Get-FlowCellNormalizedPath $currentScriptFolder) -ne $normalizedManagedFolder) {
+            $programTab.ScriptFolder = $managedFolder
+            $changed = $true
+        }
+    }
+
+    foreach ($programState in @($script:FlowCellState.Programs)) {
+        if (-not $programState.PSObject.Properties['ProgramConfig']) { continue }
+        $programConfig = Get-FlowCellProgramConfig -ProgramTab (Get-FlowCellProgramTab -ProgramTabId ([int]$programState.ProgramTabId)) -ProgramConfig $programState.ProgramConfig
+        $currentScriptFolder = [string]$programConfig.ScriptFolder
+        if (-not (Test-FlowCellBlenderLegacyScriptPath $currentScriptFolder)) { continue }
+        if ((Get-FlowCellNormalizedPath $currentScriptFolder) -ne $normalizedManagedFolder) {
+            $programConfig.ScriptFolder = $managedFolder
+            $programState.ProgramConfig = $programConfig
+            $changed = $true
+        }
+    }
+
+    if ($changed) {
+        Save-State
+        Save-FlowCellState
+        Write-UiLog ('FlowCell migrated Blender script folders into managed folder: {0}' -f $managedFolder)
+    }
+}
+
 function Get-FlowCellBlenderConfigPath {
     $localOverridePath = Join-Path $script:FlowCellPrivateRoot 'blender.config.local.json'
     if (Test-Path -LiteralPath $localOverridePath -PathType Leaf) {
@@ -9185,7 +9239,7 @@ function Test-FlowCellAlignmentToolButton($Button) {
     if ([string]$Button.Kind -ne 'script') { return $false }
     $target = [string]$Button.Target
     if ([string]::IsNullOrWhiteSpace($target)) { return $false }
-    return ([System.IO.Path]::GetFileName($target) -ieq 'alignment_tools.ps1')
+    return ([System.IO.Path]::GetFileName($target) -ieq 'util_alignment_tools.ps1')
 }
 
 function Test-FlowCellFlattenRevolveToolButton($Button) {
@@ -9193,7 +9247,7 @@ function Test-FlowCellFlattenRevolveToolButton($Button) {
     if ([string]$Button.Kind -ne 'script') { return $false }
     $target = [string]$Button.Target
     if ([string]::IsNullOrWhiteSpace($target)) { return $false }
-    return ([System.IO.Path]::GetFileName($target) -ieq 'flatten_revolve_tools.ps1')
+    return ([System.IO.Path]::GetFileName($target) -ieq 'util_flatten_revolve_tools.ps1')
 }
 
 function Get-FlowCellBlenderConfig {
@@ -9314,21 +9368,45 @@ function Get-FlowCellTargetBlenderProcessId {
 
 function Get-FlowCellBridgeFolderCandidates([object]$Config, [int]$TargetBlenderProcessId) {
     $candidates = New-Object System.Collections.Generic.List[string]
-    $bridgeRoot = [string]$Config.automation.bridgeFolder
-    $primaryBridgeFolder = Join-Path $bridgeRoot ([string]$TargetBlenderProcessId)
-    [void]$candidates.Add($primaryBridgeFolder)
+    $configuredBridgeRoot = [string]$Config.automation.bridgeFolder
 
-    $legacyResponsePath = Join-Path $bridgeRoot 'response.json'
-    $legacyRequestPath = Join-Path $bridgeRoot 'request.json'
-    if (
-        $bridgeRoot -and
-        $bridgeRoot -ne $primaryBridgeFolder -and
-        (
-            (Test-Path -LiteralPath $legacyResponsePath -PathType Leaf) -or
-            (Test-Path -LiteralPath $legacyRequestPath -PathType Leaf)
-        )
-    ) {
-        [void]$candidates.Add($bridgeRoot)
+    $addBridgeRootCandidates = {
+        param([string]$BridgeRoot)
+        if ([string]::IsNullOrWhiteSpace($BridgeRoot)) { return }
+        $primaryBridgeFolder = Join-Path $BridgeRoot ([string]$TargetBlenderProcessId)
+        if (-not $candidates.Contains($primaryBridgeFolder)) {
+            [void]$candidates.Add($primaryBridgeFolder)
+        }
+
+        $legacyResponsePath = Join-Path $BridgeRoot 'response.json'
+        $legacyRequestPath = Join-Path $BridgeRoot 'request.json'
+        if (
+            $BridgeRoot -ne $primaryBridgeFolder -and
+            (
+                (Test-Path -LiteralPath $legacyResponsePath -PathType Leaf) -or
+                (Test-Path -LiteralPath $legacyRequestPath -PathType Leaf)
+            ) -and
+            -not $candidates.Contains($BridgeRoot)
+        ) {
+            [void]$candidates.Add($BridgeRoot)
+        }
+    }
+
+    & $addBridgeRootCandidates $configuredBridgeRoot
+
+    $blenderAppDataRoot = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'Blender Foundation\Blender'
+    if (Test-Path -LiteralPath $blenderAppDataRoot -PathType Container) {
+        Get-ChildItem -LiteralPath $blenderAppDataRoot -Directory -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending |
+            ForEach-Object {
+                $fallbackBridgeRoot = Join-Path $_.FullName 'scripts\addons\blender_layers_bridge'
+                if (
+                    (Test-Path -LiteralPath $fallbackBridgeRoot -PathType Container) -and
+                    ((Get-FlowCellNormalizedPath $fallbackBridgeRoot) -ne (Get-FlowCellNormalizedPath $configuredBridgeRoot))
+                ) {
+                    & $addBridgeRootCandidates $fallbackBridgeRoot
+                }
+            }
     }
 
     return @($candidates)
@@ -12229,6 +12307,7 @@ try {
     $script:State = Read-State
     $script:FlowCellState = Read-FlowCellState
     Migrate-FlowCellIllustratorScriptReferences
+    Migrate-FlowCellBlenderScriptFolders
     Start-Backend
     Start-Ui
 }

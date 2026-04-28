@@ -77,12 +77,17 @@ Illustrator and Windows user-facing scripts are now expected directly inside the
 Illustrator internal helper scripts remain in:
 - Illustrator\HelperScripts
 
-Optional filename prefixes:
+Preferred filename prefixes:
 - file_
 - util_
 - org_
 
-These prefixes are display-only. They are not used for routing behavior, panel placement, or execution rules.
+These prefixes are for file organization only. They are not used for routing behavior, panel placement, or execution rules.
+
+Preferred usage:
+- org_ for Illustrator layer-style scripts and Blender collections-style scripts
+- file_ for file-panel scripts
+- util_ for utility-style scripts
 
 Add Script behavior
 -------------------
@@ -94,6 +99,11 @@ The main FlowCell panel Add Script button now:
 - adds those buttons only to the currently selected panel
 
 Default button labels come from the filename with any leading file_, util_, or org_ prefix removed for display only.
+
+For the built-in Blender tab, Add Script now roots to:
+- Blender\FlowCellButtons
+
+Legacy Blender add-on folders and the old repo-root Blender folder are treated as stale local paths and migrated forward to Blender\FlowCellButtons.
 
 Startup and launcher model
 --------------------------
@@ -143,12 +153,16 @@ Blender remains structured around:
 
 - Blender\FlowCellButtons\Invoke-BlenderFlowCellAction.ps1
 - Blender\FlowCellButtons\Sync-BlenderButtonsToFlowCell.ps1
-- Blender\FlowCellButtons\collection_*.ps1 wrappers
+- Blender\FlowCellButtons\org_*.ps1 wrappers for collections-style actions
+- Blender\FlowCellButtons\file_*.ps1 wrappers for file-style actions
+- Blender\FlowCellButtons\util_*.ps1 wrappers for utility-style actions
 - Blender\config.json as the sanitized public default config
 - FlowCell\local\private\blender.config.local.json as the machine-specific override for live bridge paths
 
 The public example for Blender config now belongs in:
 - examples\Blender\config.example.json
+
+Blender bridge requests prefer the configured bridge root, but FlowCell now also falls back to installed addon bridge folders under the user's AppData Blender addons path when a stale local bridge path no longer matches the live addon.
 
 Repo-safe examples
 ------------------
@@ -169,6 +183,11 @@ Some Windows helper scripts still depend on machine-local tools, but the tracked
 - fix_this_folder_from_explorer.ps1 now resolves the Codex skill path from CODEX_HOME or %USERPROFILE%\.codex.
 - monitor layout helper scripts now expect FLOWCELL_DUMMY_MONITOR_SCRIPT locally and can optionally use FLOWCELL_DUMMY_MONITOR_TARGET_DISPLAY.
 - sync_recent_creative_shortcuts.ps1 now uses local environment overrides for recent-root and watch-root locations, with neutral per-user defaults instead of personal drive paths.
+- file_update_github.ps1 now prefers the active Explorer repo, then clipboard, then the FlowCell repo itself, and finally a folder picker to find a Git repo. It stages changes, prompts for a commit message when needed, pushes the current branch to GitHub, and shows a visible success or failure message.
+
+UI-dependent Windows scripts now launch through the backend STA path when their filename indicates dialogs or interactive prompts, including file_update_github.ps1, fix_this_folder_from_explorer.ps1, and the monitor layout dialog helpers.
+
+FlowCell's backend runner now respects child process exit codes and preserves script-written status output for CLI/button launches, so Update GitHub reports real verified Git success or failure instead of a generic launcher result.
 
 Release model
 -------------
@@ -186,5 +205,5 @@ Current maintenance expectations
 - Keep Blender structured as-is.
 - Keep Illustrator and Windows user-facing scripts directly in their program folder.
 - Keep Illustrator\HelperScripts for internal non-button helper scripts.
-- Keep filename prefixes optional and display-only.
+- Prefer filename prefixes for file organization only.
 - Update this summary whenever the repository structure or FlowCell behavior changes.

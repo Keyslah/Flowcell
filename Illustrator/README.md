@@ -2,6 +2,6 @@
 
 User-facing Illustrator scripts should live directly in this folder.
 
-- Optional filename prefixes: `file_`, `util_`, `org_`
+- Preferred filename prefixes: `file_`, `util_`, `org_`
 - Prefixes are display-only in FlowCell.
 - Internal helper scripts belong in `HelperScripts/`.

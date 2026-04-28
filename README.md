@@ -43,9 +43,14 @@ Some Windows helper scripts also use local environment overrides for machine-spe
 - Blender keeps its current structured area.
 - Illustrator user-facing scripts stay directly in `Illustrator/`.
 - Windows user-facing scripts stay directly in `Windows/`.
-- Optional filename prefixes are `file_`, `util_`, and `org_`.
-- Prefixes are display-only. They do not route scripts to panels or change execution behavior.
+- Preferred filename prefixes are `file_`, `util_`, and `org_`.
+- These prefixes are only a file-organization convention. They do not route scripts to panels or change execution behavior.
 - `Illustrator/HelperScripts/` is reserved for internal helper scripts.
+
+Preferred usage:
+- `org_` for Illustrator layer-style scripts and Blender collections-style scripts
+- `file_` for file-panel scripts
+- `util_` for utility-style scripts
 
 When a script is added through FlowCell's panel UI, the `Add Script` button opens in the current program folder, supports multi-select, adds one button per selected script, and writes those buttons only into the currently selected panel. Default button labels strip `file_`, `util_`, or `org_` from the displayed name only.
 

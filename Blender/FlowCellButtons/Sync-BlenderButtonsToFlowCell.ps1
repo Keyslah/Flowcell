@@ -11,7 +11,7 @@ $flowCellStatePath = Join-Path $localRoot 'flowcell_state.json'
 $flowCellLayoutsRoot = Join-Path $localRoot 'layouts'
 $wrapperRoot = Join-Path $projectRoot 'FlowCellButtons'
 $dispatcherPath = Join-Path $wrapperRoot 'Invoke-BlenderFlowCellAction.ps1'
-$renameSelectedPath = Join-Path $wrapperRoot 'collection_rename_selected_objects.ps1'
+$renameSelectedPath = Join-Path $wrapperRoot 'org_rename_selected_objects.ps1'
 $legacyAddonPattern = Join-Path (Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'Blender Foundation\Blender') '*\scripts\addons\flowcell_*.py'
 
 function Get-SafeName([string]$Value) {
@@ -20,6 +20,20 @@ function Get-SafeName([string]$Value) {
         return 'button'
     }
     return $safe.ToLowerInvariant()
+}
+
+function Get-FlowCellButtonPrefix([string]$PanelName) {
+    $normalizedPanelName = if ($null -ne $PanelName) { [string]$PanelName } else { '' }
+    switch ($normalizedPanelName.Trim().ToLowerInvariant()) {
+        'collections' { return 'org_' }
+        'layers' { return 'org_' }
+        'files' { return 'file_' }
+        default { return 'util_' }
+    }
+}
+
+function Get-WrapperFileName([string]$PanelName, [string]$Name) {
+    return ('{0}{1}.ps1' -f (Get-FlowCellButtonPrefix -PanelName $PanelName), (Get-SafeName -Value $Name))
 }
 
 function New-WrapperContent([string]$DispatcherPath, [string]$Action, [string]$Label, [string]$Direction) {
@@ -78,7 +92,7 @@ $customProtectedNames = @(
 $protectedNames = @(
     'Invoke-BlenderFlowCellAction.ps1',
     'Sync-BlenderButtonsToFlowCell.ps1',
-    'collection_rename_selected_objects.ps1'
+    'org_rename_selected_objects.ps1'
 ) + @($customProtectedNames)
 Get-ChildItem -LiteralPath $wrapperRoot -Filter '*.ps1' -File -ErrorAction SilentlyContinue |
     Where-Object { $protectedNames -notcontains $_.Name } |
@@ -117,7 +131,7 @@ foreach ($button in @($config.buttons)) {
         $buttonSpecs.Add([pscustomobject]@{
             Id        = 'button_blender_flowcell_cycle_versions_back'
             Label     = 'cycle versions <'
-            Target    = (Join-Path $wrapperRoot 'collection_cycle_versions_back.ps1')
+            Target    = (Join-Path $wrapperRoot (Get-WrapperFileName -PanelName $panel -Name 'cycle_versions_back'))
             Tooltip   = $tooltip
             Action    = $action
             Direction = 'backward'
@@ -126,7 +140,7 @@ foreach ($button in @($config.buttons)) {
         $buttonSpecs.Add([pscustomobject]@{
             Id        = 'button_blender_flowcell_cycle_versions_forward'
             Label     = 'cycle versions >'
-            Target    = (Join-Path $wrapperRoot 'collection_cycle_versions_forward.ps1')
+            Target    = (Join-Path $wrapperRoot (Get-WrapperFileName -PanelName $panel -Name 'cycle_versions_forward'))
             Tooltip   = $tooltip
             Action    = $action
             Direction = 'forward'
@@ -139,7 +153,7 @@ foreach ($button in @($config.buttons)) {
     $buttonSpecs.Add([pscustomobject]@{
         Id        = ('button_blender_flowcell_{0}' -f $safeName)
         Label     = [string]$button.label
-        Target    = (Join-Path $wrapperRoot ('collection_{0}.ps1' -f $safeName))
+        Target    = (Join-Path $wrapperRoot (Get-WrapperFileName -PanelName $panel -Name $safeName))
         Tooltip   = $tooltip
         Action    = $action
         Direction = ''

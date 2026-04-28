@@ -1,4 +1,4 @@
-{
+﻿{
   "automation": {
     "bridgeFolder": "",
     "responseTimeoutSeconds": 20
@@ -39,19 +39,19 @@
     {
       "label": "alignment tools",
       "tooltip": "Open FlowCell alignment controls for active-object min, center, max, surface, and geocenter alignment.",
-      "scriptPath": ".\\FlowCellButtons\\alignment_tools.ps1",
+      "scriptPath": ".\\FlowCellButtons\\util_alignment_tools.ps1",
       "panel": "utility"
     },
     {
       "label": "flatten revolve",
       "tooltip": "Flatten the active mesh into a centered profile, hide the source object, and revolve the profile in place.",
-      "scriptPath": ".\\FlowCellButtons\\flatten_revolve_tools.ps1",
+      "scriptPath": ".\\FlowCellButtons\\util_flatten_revolve_tools.ps1",
       "panel": "utility"
     },
     {
       "label": "Cursor Center Hole",
       "tooltip": "With one hole wall face selected in Edit Mode, finds the center point and moves the 3D cursor to it.",
-      "scriptPath": ".\\FlowCellButtons\\collection_cursor_center_hole.ps1",
+      "scriptPath": ".\\FlowCellButtons\\util_cursor_center_hole.ps1",
       "panel": "edit"
     },
     {
@@ -69,13 +69,13 @@
     {
       "label": "cura",
       "tooltip": "Export the selected mesh objects as STL files and add them to Cura.",
-      "scriptPath": ".\\FlowCellButtons\\collection_cura.ps1",
+      "scriptPath": ".\\FlowCellButtons\\file_cura.ps1",
       "panel": "files"
     },
     {
       "label": "orca",
       "tooltip": "Export the selected mesh objects as STL files and add them to Orca.",
-      "scriptPath": ".\\FlowCellButtons\\collection_orca.ps1",
+      "scriptPath": ".\\FlowCellButtons\\file_orca.ps1",
       "panel": "files"
     },
     {
@@ -152,3 +152,4 @@
     }
   ]
 }
+

@@ -193,21 +193,45 @@ function Get-TargetBlenderProcessId {
 
 function Get-BridgeFolderCandidates([object]$Config, [int]$TargetBlenderProcessId) {
     $candidates = New-Object System.Collections.Generic.List[string]
-    $primaryBridgeFolder = Join-Path ([string]$Config.automation.bridgeFolder) ([string]$TargetBlenderProcessId)
-    [void]$candidates.Add($primaryBridgeFolder)
+    $configuredBridgeRoot = [string]$Config.automation.bridgeFolder
 
-    $legacyBridgeFolder = [string]$Config.automation.bridgeFolder
-    $legacyResponsePath = Join-Path $legacyBridgeFolder 'response.json'
-    $legacyRequestPath = Join-Path $legacyBridgeFolder 'request.json'
-    if (
-        $legacyBridgeFolder -and
-        $legacyBridgeFolder -ne $primaryBridgeFolder -and
-        (
-            (Test-Path -LiteralPath $legacyResponsePath -PathType Leaf) -or
-            (Test-Path -LiteralPath $legacyRequestPath -PathType Leaf)
-        )
-    ) {
-        [void]$candidates.Add($legacyBridgeFolder)
+    $addBridgeRootCandidates = {
+        param([string]$BridgeRoot)
+        if ([string]::IsNullOrWhiteSpace($BridgeRoot)) { return }
+        $primaryBridgeFolder = Join-Path $BridgeRoot ([string]$TargetBlenderProcessId)
+        if (-not $candidates.Contains($primaryBridgeFolder)) {
+            [void]$candidates.Add($primaryBridgeFolder)
+        }
+
+        $legacyResponsePath = Join-Path $BridgeRoot 'response.json'
+        $legacyRequestPath = Join-Path $BridgeRoot 'request.json'
+        if (
+            $BridgeRoot -ne $primaryBridgeFolder -and
+            (
+                (Test-Path -LiteralPath $legacyResponsePath -PathType Leaf) -or
+                (Test-Path -LiteralPath $legacyRequestPath -PathType Leaf)
+            ) -and
+            -not $candidates.Contains($BridgeRoot)
+        ) {
+            [void]$candidates.Add($BridgeRoot)
+        }
+    }
+
+    & $addBridgeRootCandidates $configuredBridgeRoot
+
+    $blenderAppDataRoot = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'Blender Foundation\Blender'
+    if (Test-Path -LiteralPath $blenderAppDataRoot -PathType Container) {
+        Get-ChildItem -LiteralPath $blenderAppDataRoot -Directory -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending |
+            ForEach-Object {
+                $fallbackBridgeRoot = Join-Path $_.FullName 'scripts\addons\blender_layers_bridge'
+                if (
+                    (Test-Path -LiteralPath $fallbackBridgeRoot -PathType Container) -and
+                    ($fallbackBridgeRoot.TrimEnd('\').ToLowerInvariant() -ne $configuredBridgeRoot.TrimEnd('\').ToLowerInvariant())
+                ) {
+                    & $addBridgeRootCandidates $fallbackBridgeRoot
+                }
+            }
     }
 
     return @($candidates)

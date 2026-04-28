@@ -1528,11 +1528,14 @@ class FlowCellApp {
     }
 
     RunGenericScript(scriptPath, source, activateExe := "", methodPrefix := "generic") {
+        global flowCellLastActionStatusPath
         result := {
             attempted: false,
             succeeded: false,
             method: methodPrefix,
-            detail: ""
+            detail: "",
+            exitCode: "",
+            statusText: ""
         }
 
         if scriptPath = "" {
@@ -1550,21 +1553,47 @@ class FlowCellApp {
 
         result.attempted := true
         try {
+            statusBefore := ""
+            if FileExist(flowCellLastActionStatusPath) {
+                try statusBefore := FileRead(flowCellLastActionStatusPath, "UTF-8")
+                catch
+                    statusBefore := ""
+            }
+
             SplitPath scriptPath, , , &extension
             extension := "." StrLower(extension)
+            exitCode := 0
             if extension = ".ps1" {
                 if this.ScriptRequiresVisibleWindow(scriptPath) {
-                    RunWait('powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Sta -File "' scriptPath '"')
+                    exitCode := RunWait('powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Sta -File "' scriptPath '"')
                 } else {
-                    RunWait('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' scriptPath '"', , "Hide")
+                    exitCode := RunWait('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' scriptPath '"', , "Hide")
                 }
             } else if extension = ".cmd" || extension = ".bat" {
-                RunWait(A_ComSpec ' /c "' scriptPath '"', , "Hide")
+                exitCode := RunWait(A_ComSpec ' /c "' scriptPath '"', , "Hide")
             } else {
-                RunWait('"' scriptPath '"')
+                exitCode := RunWait('"' scriptPath '"')
             }
-            result.succeeded := true
-            result.detail := "Script launched successfully."
+
+            statusAfter := ""
+            if FileExist(flowCellLastActionStatusPath) {
+                try statusAfter := FileRead(flowCellLastActionStatusPath, "UTF-8")
+                catch
+                    statusAfter := ""
+            }
+
+            result.exitCode := exitCode
+            if statusAfter != ""
+                result.statusText := RTrim(statusAfter, "`r`n")
+
+            if exitCode = 0 {
+                result.succeeded := true
+                result.detail := result.statusText != "" ? result.statusText : "Script launched successfully."
+            } else {
+                result.succeeded := false
+                result.method := methodPrefix "_exit_code"
+                result.detail := result.statusText != "" ? result.statusText : "Script exited with code " exitCode "."
+            }
         } catch as err {
             result.succeeded := false
             result.detail := err.Message
@@ -1576,6 +1605,9 @@ class FlowCellApp {
         SplitPath scriptPath, &fileName
         fileName := StrLower(Trim(fileName))
         return InStr(fileName, "rename_selected") > 0
+            || InStr(fileName, "update_github") > 0
+            || InStr(fileName, "fix_this_folder_from_explorer") > 0
+            || InStr(fileName, "_dialog") > 0
     }
 
     ResetMacroStop() {
@@ -7093,11 +7125,15 @@ if runActionId != "" {
 if runScriptPath != "" {
     try {
         result := app.RunBoundScript(runScriptPath, "cli script", runScriptProgramTabId, runScriptProgram)
-        statusText := "Script: " runScriptPath "`r`n"
-            . "Attempted: " BoolToWord(result.attempted) "`r`n"
-            . "Succeeded: " BoolToWord(result.succeeded) "`r`n"
-            . "Method: " result.method "`r`n"
-            . "Details: " result.detail
+        statusText := ""
+        if result.HasOwnProp("statusText") && Trim(result.statusText) != ""
+            statusText := result.statusText
+        else
+            statusText := "Script: " runScriptPath "`r`n"
+                . "Attempted: " BoolToWord(result.attempted) "`r`n"
+                . "Succeeded: " BoolToWord(result.succeeded) "`r`n"
+                . "Method: " result.method "`r`n"
+                . "Details: " result.detail
         WriteTextFile(flowCellLastActionStatusPath, statusText)
         ExitApp(result.succeeded ? 0 : 1)
     } catch as err {

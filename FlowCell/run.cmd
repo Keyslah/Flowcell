@@ -3,6 +3,7 @@ setlocal
 
 set "ROOT=%~dp0"
 set "UI_SCRIPT=%ROOT%FlowCellUI.ps1"
+set "RESTORE_SCRIPT=%ROOT%helpers\Restore-FlowCellWindow.ps1"
 set "AHK_EXE=C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe"
 set "LOG_DIR=%ROOT%local\logs"
 set "LAUNCH_LOG=%LOG_DIR%\launcher.log"
@@ -30,6 +31,11 @@ if "%~1"=="" goto launch_ui
 goto launch_backend
 
 :launch_ui
+if exist "%RESTORE_SCRIPT%" (
+    "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%RESTORE_SCRIPT%" >nul 2>&1
+    if "%ERRORLEVEL%"=="0" exit /b 0
+)
+
 pushd "%ROOT%"
 "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -STA -File "%UI_SCRIPT%" 1>>"%UI_LAUNCH_LOG%" 2>&1
 set "EXIT_CODE=%ERRORLEVEL%"
