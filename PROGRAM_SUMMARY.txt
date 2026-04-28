@@ -22,7 +22,7 @@ FlowCell is a Windows desktop automation shell for creative and system workflows
 Open-source repository model
 ----------------------------
 The repository is now arranged for public GitHub use. Tracked source, docs, examples, and tooling remain in the repo. Mutable user state, machine-specific settings, logs, and build artifacts are kept in ignored local storage.
-FlowCell also now includes donation support through .github\FUNDING.yml, a README support link, and a Stripe Payment Link.
+FlowCell also now includes donation support through .github\FUNDING.yml, a README support badge link, and a Stripe Payment Link.
 Contributor guidance now explicitly requires relative repo-path resolution instead of tracked machine-specific absolute paths.
 
 Top-level folders:
