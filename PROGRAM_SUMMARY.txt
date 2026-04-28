@@ -188,6 +188,7 @@ Some Windows helper scripts still depend on machine-local tools, but the tracked
 UI-dependent Windows scripts now launch through the backend STA path when their filename indicates dialogs or interactive prompts, including file_update_github.ps1, fix_this_folder_from_explorer.ps1, and the monitor layout dialog helpers.
 
 FlowCell's backend runner now respects child process exit codes and preserves script-written status output for CLI/button launches, so Update GitHub reports real verified Git success or failure instead of a generic launcher result.
+The Update GitHub script also disables PowerShell's native-command stderr escalation around Git calls so normal push progress output does not get misreported as a failure after a successful push.
 
 Release model
 -------------

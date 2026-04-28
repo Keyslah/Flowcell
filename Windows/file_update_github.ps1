@@ -236,8 +236,27 @@ function Invoke-Git {
     )
 
     $gitExe = Get-GitExecutablePath
-    $output = & $gitExe -C $RepositoryRoot @Arguments 2>&1
-    $exitCode = $LASTEXITCODE
+    $previousNativeErrorPreference = $null
+    $hasNativeErrorPreference = $false
+    try {
+        $nativePreferenceVariable = Get-Variable -Name 'PSNativeCommandUseErrorActionPreference' -ErrorAction Stop
+        $previousNativeErrorPreference = [bool]$nativePreferenceVariable.Value
+        $hasNativeErrorPreference = $true
+        Set-Variable -Name 'PSNativeCommandUseErrorActionPreference' -Value $false
+    }
+    catch {
+        $hasNativeErrorPreference = $false
+    }
+
+    try {
+        $output = & $gitExe -C $RepositoryRoot @Arguments 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        if ($hasNativeErrorPreference) {
+            Set-Variable -Name 'PSNativeCommandUseErrorActionPreference' -Value $previousNativeErrorPreference
+        }
+    }
     $lines = @($output | ForEach-Object { [string]$_ })
     $warningPatterns = @(
         "^warning: in the working copy of '.*', LF will be replaced by CRLF the next time Git touches it$",
