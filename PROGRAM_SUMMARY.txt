@@ -1,0 +1,190 @@
+FlowCell Program Summary
+Last updated: 2026-04-28
+
+Maintenance rule
+----------------
+This file is the living summary for the FlowCell workspace. Any time FlowCell is updated, fixed, reorganized, or extended, update this file in the same change so it stays accurate.
+
+Purpose
+-------
+FlowCell is a Windows desktop automation shell for creative and system workflows. It combines a PowerShell WPF UI with an AutoHotkey v2 backend to manage:
+
+- program tabs
+- editable panel tabs
+- script and macro buttons
+- hotkey bindings
+- recorded macros
+- panel popouts
+- tool popouts
+- popout layout snapshots
+- Blender bridge actions
+
+Open-source repository model
+----------------------------
+The repository is now arranged for public GitHub use. Tracked source, docs, examples, and tooling remain in the repo. Mutable user state, machine-specific settings, logs, and build artifacts are kept in ignored local storage.
+
+Top-level folders:
+- Blender: preserved Blender integration area, including FlowCell button wrappers and a sanitized public config.
+- FlowCell: the main desktop app, helper scripts, vendored dependencies, and ignored local runtime storage.
+- Illustrator: public Illustrator script area.
+- Photoshop: public Photoshop script area.
+- Windows: public Windows script area.
+- docs: repository documentation.
+- examples: public example configs with safe placeholders.
+- releases: release-process notes only. No committed EXEs.
+- tools: source-only tooling, including the optional C# launcher source.
+
+Top-level launcher files:
+- run.cmd: root entry point that delegates to FlowCell\run.cmd.
+- run_hidden.vbs: hidden root launcher wrapper.
+- run_backend_hidden.vbs: hidden root backend wrapper.
+
+Main live files
+---------------
+- FlowCell\FlowCellUI.ps1: main PowerShell WPF UI.
+- FlowCell\FlowCellBackend.ahk: AutoHotkey v2 backend controller.
+- FlowCell\run.cmd: local app launcher for UI or backend execution.
+- FlowCell\helpers\RecordMacro.ahk: recorded macro capture helper.
+- FlowCell\helpers\RunRecordedMacro.ps1: recorded macro launcher helper.
+- tools\launcher\FlowCellLauncher.cs: optional launcher source kept as source only.
+
+Local-only runtime storage
+--------------------------
+FlowCell now keeps mutable runtime data in FlowCell\local, which is ignored by Git.
+
+Local runtime paths:
+- FlowCell\local\bindings.ini: hotkeys, program tab metadata, and shortcut bindings.
+- FlowCell\local\flowcell_state.json: selected program, selected panel, button layout, panel state, popout state, and tool popout state.
+- FlowCell\local\scan_state.ini: Illustrator scan cache/state.
+- FlowCell\local\layouts: saved popout layout snapshots.
+- FlowCell\local\panel_saves: saved panel exports.
+- FlowCell\local\recorded_actions: recorded macro definitions.
+- FlowCell\local\logs: UI, backend, launcher, and action status logs.
+- FlowCell\local\private\local.settings.json: optional machine-specific settings such as private config paths.
+- FlowCell\local\temp: generated temp files.
+- FlowCell\local\bin: ignored local binaries such as the optional launcher EXE.
+
+This change ensures existing panel configuration, hotkeys, bindings, popout layouts, saved panels, and other user changes remain local and should not be overwritten by GitHub updates.
+
+Program folder rules
+--------------------
+Blender keeps its current structured area.
+
+Illustrator and Windows user-facing scripts are now expected directly inside their program folder:
+- Illustrator\*.jsx and Illustrator\*.js
+- Windows\*.ps1, *.cmd, *.bat, *.vbs, *.ahk, or similar public launchers
+
+Illustrator internal helper scripts remain in:
+- Illustrator\HelperScripts
+
+Optional filename prefixes:
+- file_
+- util_
+- org_
+
+These prefixes are display-only. They are not used for routing behavior, panel placement, or execution rules.
+
+Add Script behavior
+-------------------
+The main FlowCell panel Add Script button now:
+
+- opens a file picker rooted in the current program folder
+- allows selecting multiple scripts at once
+- creates one button per selected script
+- adds those buttons only to the currently selected panel
+
+Default button labels come from the filename with any leading file_, util_, or org_ prefix removed for display only.
+
+Startup and launcher model
+--------------------------
+The normal root launcher remains D:\Dev\workspace\Codex\flowcell\run.cmd. It delegates to FlowCell\run.cmd.
+
+FlowCell\run.cmd:
+- launches FlowCellUI.ps1 with Windows PowerShell and STA mode when started without backend arguments
+- launches FlowCellBackend.ahk with AutoHotkey v2 when backend arguments are present
+- writes launcher output into FlowCell\local\logs
+
+The optional hidden launcher source is stored in tools\launcher\FlowCellLauncher.cs. Its built EXE is intentionally not part of the tracked repo.
+
+UI behavior overview
+--------------------
+FlowCellUI.ps1 provides:
+
+- top-level program tabs
+- per-program panel tabs
+- script and macro buttons per panel
+- button selection and shortcut binding
+- panel popouts
+- selected-tool popouts
+- popout layout save/load
+- panel save/load
+- Macro Lab
+- Bind Viewer
+- program-template setup for Illustrator, Blender, Photoshop, Windows, and generic apps
+
+The UI still persists popout-first workspace state, panel geometry, button order, selected tabs, button scale, and cluster membership, but those writes now stay under FlowCell\local instead of the tracked app folder.
+
+Backend behavior overview
+-------------------------
+FlowCellBackend.ahk:
+
+- loads bindings from FlowCell\local\bindings.ini
+- loads recorded macros from FlowCell\local\recorded_actions
+- writes action status to FlowCell\local\logs\last_action_status.txt
+- writes controller logs and scan reports to FlowCell\local\logs
+- runs Illustrator and Photoshop direct-script actions
+- runs Windows and generic scripts
+- handles Blender bridge actions
+- registers hotkeys and action shortcuts
+
+Blender integration
+-------------------
+Blender remains structured around:
+
+- Blender\FlowCellButtons\Invoke-BlenderFlowCellAction.ps1
+- Blender\FlowCellButtons\Sync-BlenderButtonsToFlowCell.ps1
+- Blender\FlowCellButtons\collection_*.ps1 wrappers
+- Blender\config.json as the sanitized public default config
+- FlowCell\local\private\blender.config.local.json as the machine-specific override for live bridge paths
+
+The public example for Blender config now belongs in:
+- examples\Blender\config.example.json
+
+Repo-safe examples
+------------------
+Public example configs now live under examples:
+
+- examples\FlowCell\bindings.example.ini
+- examples\FlowCell\flowcell_state.example.json
+- examples\FlowCell\local.settings.example.json
+- examples\Blender\config.example.json
+- examples\Windows\windows.env.example
+
+These examples intentionally avoid personal paths and secrets.
+
+Windows helper override model
+-----------------------------
+Some Windows helper scripts still depend on machine-local tools, but the tracked repo no longer hardcodes those paths.
+
+- fix_this_folder_from_explorer.ps1 now resolves the Codex skill path from CODEX_HOME or %USERPROFILE%\.codex.
+- monitor layout helper scripts now expect FLOWCELL_DUMMY_MONITOR_SCRIPT locally and can optionally use FLOWCELL_DUMMY_MONITOR_TARGET_DISPLAY.
+- sync_recent_creative_shortcuts.ps1 now uses local environment overrides for recent-root and watch-root locations, with neutral per-user defaults instead of personal drive paths.
+
+Release model
+-------------
+The repository is source-only by default.
+
+- EXE files and build artifacts are ignored.
+- Built binaries are not committed to the repo.
+- The optional launcher source is tracked under tools\launcher.
+- Release binaries should be produced locally and later distributed through GitHub Releases.
+
+Current maintenance expectations
+--------------------------------
+- Keep public source in tracked repo folders.
+- Keep mutable runtime data in FlowCell\local.
+- Keep Blender structured as-is.
+- Keep Illustrator and Windows user-facing scripts directly in their program folder.
+- Keep Illustrator\HelperScripts for internal non-button helper scripts.
+- Keep filename prefixes optional and display-only.
+- Update this summary whenever the repository structure or FlowCell behavior changes.

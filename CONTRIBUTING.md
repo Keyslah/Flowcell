@@ -1,0 +1,34 @@
+# Contributing
+
+## Ground Rules
+
+- Keep the project rooted at `D:\Dev\workspace\Codex\flowcell`.
+- Do not reorganize anything outside this folder.
+- Update `PROGRAM_SUMMARY.txt` in the same change whenever FlowCell behavior, structure, or workflows change.
+- Do not commit EXEs, logs, personal paths, private settings, or other mutable local state.
+
+## Repository Expectations
+
+- Public source belongs in tracked folders such as `FlowCell/`, `Blender/`, `Illustrator/`, `Windows/`, `Photoshop/`, `docs/`, `examples/`, and `tools/`.
+- Mutable runtime data belongs in `FlowCell/local/`, which is ignored by Git.
+- Illustrator user-facing scripts should stay directly in `Illustrator/`.
+- Windows user-facing scripts should stay directly in `Windows/`.
+- Internal Illustrator helpers belong in `Illustrator/HelperScripts/`.
+
+## Script Naming
+
+- Optional prefixes are `file_`, `util_`, and `org_`.
+- These prefixes are for display cleanup only.
+- Do not build routing logic around filename prefixes.
+
+## Validation
+
+- Parse-check PowerShell files before shipping changes.
+- Keep launcher behavior working through `run.cmd` and `FlowCell/run.cmd`.
+- If you touch panel import, layout persistence, or hotkey behavior, verify that local state still stays under `FlowCell/local/`.
+
+## Pull Requests
+
+- Describe user-facing changes and any local-state migration impact.
+- Call out changes to panel behavior, hotkeys, bindings, popout layouts, or release packaging.
+- Note whether `docs/`, `examples/`, and `PROGRAM_SUMMARY.txt` were updated.

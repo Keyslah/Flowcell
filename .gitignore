@@ -1,0 +1,15 @@
+FlowCell/local/
+
+*.exe
+*.dll
+*.pdb
+*.msi
+*.zip
+*.7z
+
+bin/
+obj/
+.vs/
+
+Thumbs.db
+.DS_Store
