@@ -24,9 +24,10 @@ Open-source repository model
 The repository is now arranged for public GitHub use. Tracked source, docs, examples, and tooling remain in the repo. Mutable user state, machine-specific settings, logs, and build artifacts are kept in ignored local storage.
 FlowCell also now includes donation support through .github\FUNDING.yml, a README support badge link, and a Stripe Payment Link.
 Contributor guidance now explicitly requires relative repo-path resolution instead of tracked machine-specific absolute paths.
+README and contributor docs now lead with script folder rules, explicitly point Blender submissions to Blender\FlowCellButtons, and direct contributors toward GitHub Issues for bugs and GitHub Discussions for questions or early script proposals.
 
 Top-level folders:
-- Blender: preserved Blender integration area, including FlowCell button wrappers and a sanitized public config.
+- Blender: Blender integration files, including FlowCell button wrappers and a sanitized public config.
 - FlowCell: the main desktop app, helper scripts, vendored dependencies, and ignored local runtime storage.
 - Illustrator: public Illustrator script area.
 - Photoshop: public Photoshop script area.
@@ -56,7 +57,7 @@ FlowCell now keeps mutable runtime data in FlowCell\local, which is ignored by G
 
 Local runtime paths:
 - FlowCell\local\bindings.ini: hotkeys, program tab metadata, and shortcut bindings.
-- FlowCell\local\flowcell_state.json: selected program, selected panel, button layout, panel state, popout state, and tool popout state.
+- FlowCell\local\flowcell_state.json: selected program, selected panel, button layout, panel state, startup popout-only preference, popout state, and tool popout state.
 - FlowCell\local\scan_state.ini: Illustrator scan cache/state.
 - FlowCell\local\layouts: saved popout layout snapshots.
 - FlowCell\local\panel_saves: saved panel exports.
@@ -70,11 +71,15 @@ This change ensures existing panel configuration, hotkeys, bindings, popout layo
 
 Program folder rules
 --------------------
-Blender keeps its current structured area.
+Blender FlowCell button wrappers belong in:
+- Blender\FlowCellButtons
 
 Illustrator and Windows user-facing scripts are now expected directly inside their program folder:
 - Illustrator\*.jsx and Illustrator\*.js
 - Windows\*.ps1, *.cmd, *.bat, *.vbs, *.ahk, or similar public launchers
+
+Photoshop repo-safe public scripts belong in:
+- Photoshop\*
 
 Illustrator internal helper scripts remain in:
 - Illustrator\HelperScripts
@@ -84,12 +89,18 @@ Preferred filename prefixes:
 - util_
 - org_
 
-These prefixes are for file organization only. They are not used for routing behavior, panel placement, or execution rules.
+These prefixes are for file organization and display cleanup only. They are not used for routing behavior, panel placement, or execution rules.
 
 Preferred usage:
-- org_ for Illustrator layer-style scripts and Blender collections-style scripts
-- file_ for file-panel scripts
+- org_ for organization actions such as Illustrator layer tools and Blender collection tools
+- file_ for file-oriented scripts
 - util_ for utility-style scripts
+
+GitHub collaboration guidance
+-----------------------------
+- GitHub Issues are for bugs, regressions, broken scripts, and concrete feature requests.
+- GitHub Discussions are for questions, script ideas, workflow proposals, and early feedback before implementation.
+- Script proposals should mention the intended target folder and preferred filename prefix.
 
 Add Script behavior
 -------------------
@@ -133,6 +144,21 @@ FlowCellUI.ps1 provides:
 - Macro Lab
 - Bind Viewer
 - program-template setup for Illustrator, Blender, Photoshop, Windows, and generic apps
+- a startup checkbox that controls whether FlowCell launches minimized and restores the last pop-out-only layout
+- right-click rename and delete actions on the top program tiles
+
+Shortcut display note:
+- Bind Viewer, the shortcut picker list, the bind-area shortcut dropdown, and the macro/program shortcut readouts now translate internal AutoHotkey-style tokens into readable labels such as `Ctrl + Alt + K` while keeping the stored bind format unchanged.
+
+Program tile note:
+- Right-clicking a program tile on the main page now opens Rename Program and Delete Program actions. Delete removes that FlowCell program tab plus its panels, buttons, shortcuts, and saved live popout state from current local configuration.
+
+Selected-tool popout note:
+- `Pop Tools` now has only two modes: `Group` and `Individual`.
+- `Group` opens checked regular buttons together in one responsive tool popout that reflows as the window is resized, matching panel-popout behavior more closely.
+- `Individual` opens one popout per selected button.
+- Special embedded tool controls that render many internal buttons, such as alignment tools and flatten/revolve tools, still pop out as their own individual windows even when other selected buttons are grouped.
+- Grouped tool popouts now persist and restore as grouped windows instead of being split back into one window per button on restart.
 
 The UI still persists popout-first workspace state, panel geometry, button order, selected tabs, button scale, and cluster membership, but those writes now stay under FlowCell\local instead of the tracked app folder.
 
@@ -189,6 +215,13 @@ Some Windows helper scripts still depend on machine-local tools, but the tracked
 - sync_recent_creative_shortcuts.ps1 now uses local environment overrides for recent-root and watch-root locations, with neutral per-user defaults instead of personal drive paths.
 - file_update_github.ps1 now prefers the active Explorer repo, then clipboard, then the FlowCell repo itself, and finally a folder picker to find a Git repo. It stages changes, prompts for a commit message when needed, pushes the current branch to GitHub, and shows a visible success or failure message.
 - monitor layout launcher entry scripts now resolve their sibling dialog scripts from $PSScriptRoot instead of a fixed machine path.
+- monitor layout wrappers now share Windows\DummyMonitorHelpers.ps1, auto-discover dummy_monitor_toggle.py from FLOWCELL_DUMMY_MONITOR_SCRIPT or the sibling Codex workspace, and write explicit FlowCell status text instead of falling back to a generic script success line.
+- the Save Layout and Use Layout wrappers no longer depend on the Python helper writing JSON only when stdout is a TTY; they now show success from the requested layout name after a verified zero exit code.
+- the Save Layout and Use Layout entry scripts now run their STA dialog helpers synchronously, so FlowCell waits for the real result and can surface actual monitor-layout failures instead of instant launcher success.
+- the one-shot Dummy button restore path now prefers the fresh session snapshot from the last toggle before falling back to the saved active layout profile, avoiding stale `main` profile restores when the display topology has changed since that profile was saved.
+- the shared Windows dummy-monitor helper now validates the Python interpreter before use and prefers a working `python.exe` over a broken `py.exe` launcher, preventing false button failures caused by a stale Python launcher registration.
+- FlowCell now canonicalizes side-specific hotkey text like `<^<+F2` into one shared stored bind such as `^+F2`, so the backend cannot keep duplicate left/right modifier variants alive and the UI stops showing the wrong modifier side for the active shortcut.
+- FlowCell now repairs orphaned script-button `BindingId` values by matching the current script target and program tab during UI sync, which fixes stale Utility-panel button binds like the Windows `Dummy` entry after a binding is recreated.
 
 Illustrator 3D test scripts now resolve their helper macro wrappers from the repo's FlowCell\helpers folder relative to the script location instead of a user-specific codexapp path.
 
@@ -210,8 +243,9 @@ Current maintenance expectations
 --------------------------------
 - Keep public source in tracked repo folders.
 - Keep mutable runtime data in FlowCell\local.
-- Keep Blender structured as-is.
+- Keep Blender FlowCell button wrappers in Blender\FlowCellButtons.
 - Keep Illustrator and Windows user-facing scripts directly in their program folder.
+- Keep Photoshop repo-safe public scripts directly in Photoshop.
 - Keep Illustrator\HelperScripts for internal non-button helper scripts.
 - Prefer filename prefixes for file organization only.
 - Update this summary whenever the repository structure or FlowCell behavior changes.
