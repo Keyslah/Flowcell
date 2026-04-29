@@ -23,6 +23,23 @@ Preferred usage:
 
 When a script is added through FlowCell's panel UI, the `Add Script` button opens in the current program folder, supports multi-select, adds one button per selected script, and writes those buttons only into the currently selected panel. Default button labels strip `file_`, `util_`, or `org_` from the displayed name only.
 
+## Script Folder Rules
+
+- Blender FlowCell button wrappers belong in `Blender/FlowCellButtons/`.
+- Illustrator user-facing scripts stay directly in `Illustrator/`.
+- Windows user-facing scripts stay directly in `Windows/`.
+- Photoshop repo-safe public scripts stay in `Photoshop/`.
+- Preferred filename prefixes are `file_`, `util_`, and `org_`.
+- These prefixes are only a file-organization convention. They do not route scripts to panels or change execution behavior.
+- `Illustrator/HelperScripts/` is reserved for internal helper scripts.
+
+Preferred usage:
+- `org_` for organization actions such as Illustrator layer tools or Blender collection tools
+- `file_` for file-oriented scripts
+- `util_` for utility scripts
+
+When a script is added through FlowCell's panel UI, the `Add Script` button opens in the current program folder, supports multi-select, adds one button per selected script, and writes those buttons only into the currently selected panel. Default button labels strip `file_`, `util_`, or `org_` from the displayed name only.
+
 ## Repository Layout
 
 - `FlowCell/`: main app code, launcher scripts, helpers, vendored dependencies, and ignored local runtime storage under `FlowCell/local/`.
