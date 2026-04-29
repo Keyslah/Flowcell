@@ -312,7 +312,7 @@ function Get-BridgeFolderCandidates([object]$Config, [int]$TargetBlenderProcessI
         Get-ChildItem -LiteralPath $blenderAppDataRoot -Directory -ErrorAction SilentlyContinue |
             Sort-Object Name -Descending |
             ForEach-Object {
-                $fallbackBridgeRoot = Join-Path $_.FullName 'scripts\addons\blender_layers_bridge'
+                $fallbackBridgeRoot = Join-Path $_.FullName 'scripts\addons\blender_bridge'
                 if (
                     (Test-Path -LiteralPath $fallbackBridgeRoot -PathType Container) -and
                     ($fallbackBridgeRoot.TrimEnd('\').ToLowerInvariant() -ne $configuredBridgeRoot.TrimEnd('\').ToLowerInvariant())

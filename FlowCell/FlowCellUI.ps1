@@ -10080,7 +10080,7 @@ function Get-FlowCellBridgeFolderCandidates([object]$Config, [int]$TargetBlender
         Get-ChildItem -LiteralPath $blenderAppDataRoot -Directory -ErrorAction SilentlyContinue |
             Sort-Object Name -Descending |
             ForEach-Object {
-                $fallbackBridgeRoot = Join-Path $_.FullName 'scripts\addons\blender_layers_bridge'
+                $fallbackBridgeRoot = Join-Path $_.FullName 'scripts\addons\blender_bridge'
                 if (
                     (Test-Path -LiteralPath $fallbackBridgeRoot -PathType Container) -and
                     ((Get-FlowCellNormalizedPath $fallbackBridgeRoot) -ne (Get-FlowCellNormalizedPath $configuredBridgeRoot))
