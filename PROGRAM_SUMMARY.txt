@@ -25,10 +25,11 @@ The repository is now arranged for public GitHub use. Tracked source, docs, exam
 FlowCell also now includes donation support through .github\FUNDING.yml, a README support badge link, and a Stripe Payment Link.
 Contributor guidance now explicitly requires relative repo-path resolution instead of tracked machine-specific absolute paths.
 README and contributor docs now lead with script folder rules, explicitly point Blender submissions to Blender\FlowCellButtons, and direct contributors toward GitHub Issues for bugs and GitHub Discussions for questions or early script proposals.
-README now keeps the Blender-button explanation short instead of duplicating the deep doc.
-docs\blender-buttons.md now carries the detailed Blender-button reference using FlowCell-root paths only, covering FlowCellButtons, SupportScripts, ManagedActions, config files, Blender runtime filenames, and ScriptDump locations without embedding personal machine paths.
-That deep Blender-button doc now explicitly states that FlowCell copies the selected script's code into the live Blender file `...\scripts\addons\blender_bridge\flowcell_actions.py`.
-That doc now also explains Blender custom-action script structure in concrete terms: required entrypoint names, accepted callable signatures, recommended return shapes, failure handling, top-level function requirements, and a minimal starter template.
+README now keeps the Blender-button explanation short and points directly to the deeper doc instead of repeating the full model.
+docs\blender-buttons.md now leads with the real Add Button user flow, puts the script contract immediately after the button click step, and keeps the runtime/path internals later in the page.
+That Blender-button doc still covers FlowCell-root paths only, including FlowCellButtons, SupportScripts, ManagedActions, config files, Blender runtime filenames, and ScriptDump locations without embedding personal machine paths.
+That deep Blender-button doc explicitly states that FlowCell copies the selected script's code into the live Blender file `...\scripts\addons\blender_bridge\flowcell_actions.py`.
+That doc also explains Blender custom-action script structure in concrete terms: required entrypoint names, accepted callable signatures, recommended return shapes, failure handling, top-level function requirements, and a minimal starter template.
 Blender\FlowCellButtons\README.md is back to being a tiny folder-specific note that points readers at docs\blender-buttons.md.
 
 Top-level folders:

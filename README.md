@@ -7,36 +7,13 @@ This repository is structured for public source control. Publishable source stay
 
 ## How Blender buttons work
 
-When you click Add Button in the Blender tab, FlowCell asks for a Blender .py script.
+When you click Add Button in the Blender tab, FlowCell asks for a Blender `.py` script.
 
-That script can be either:
+That script should be normal Blender Python, usually using `bpy`, and it should work from the current scene, selection, mode, or active object. It should expose one top-level entrypoint named `run_flowcell_action`, `main`, or `perform_*`. It should not be a full Blender add-on, installer, custom Blender UI package, background listener, or Text Editor-only script.
 
-single action = one FlowCell button / one Blender function
-tool set = one script that defines multiple related FlowCell buttons/functions
+If the script is valid, FlowCell installs the Blender-side action, creates the matching wrapper in `Blender/FlowCellButtons/`, adds the new button to the selected panel, and tells you whether Blender needs a reload or restart.
 
-The script should be clean Blender Python, usually using bpy. It should run from the current scene, selection, or active object. It should not be a full Blender add-on, installer, Blender UI panel, Blender menu/button creator, modal tool, blocking popup workflow, or something that only works from Blender’s Text Editor.
-
-FlowCell copies the selected script’s code into this exact live Blender file:
-
-...\scripts\addons\blender_bridge\flowcell_actions.py
-
- The inserted code becomes one or more named functions inside flowcell_actions.py.
-
-FlowCell also creates matching .ps1 wrappers in:
-
-Blender\FlowCellButtons
-
-A wrapper is the FlowCell-side button launcher. One wrapper equals one FlowCell button. It stores the button description, shows where the Python function was inserted, and calls:
-
-Blender\SupportScripts\Invoke-BlenderFlowCellAction.ps1
-
-Click path:
-
-FlowCell button → .ps1 wrapper → Invoke-BlenderFlowCellAction.ps1 → flowcell_bridge.py → flowcell_actions.py → Blender runs the inserted function.
-
-ScriptDump is private storage for rough/testing/old/downloaded files and is not GitHub-updated.
-
-See [docs/blender-buttons.md](docs/blender-buttons.md) for the full Blender-button model and folder breakdown.
+See [docs/blender-buttons.md](docs/blender-buttons.md) for the full Add Button walkthrough, the script contract, and the runtime file layout.
 
 ## Script Folder Rules
 

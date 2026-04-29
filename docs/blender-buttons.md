@@ -1,82 +1,69 @@
 # Blender Buttons
 
-## Overview
+## User Flow
 
-When you click `Add Button` in the Blender tab, FlowCell asks for a Blender `.py` script.
+This is the sequence the user follows:
 
-That script can be either:
+1. Open the Blender tab in FlowCell.
+2. Click `Add Button`.
+3. Choose one Blender `.py` script.
+4. FlowCell validates the script immediately.
+5. If the script is valid, FlowCell installs the Blender-side action, creates the wrapper button, adds it to the selected panel, and tells you whether Blender needs a reload or restart.
 
-- single action = one FlowCell button / one Blender function
-- tool set = one script that defines multiple related FlowCell buttons/functions
+The important part is step 3. The script needs to already follow the contract below.
 
-The script should be clean Blender Python, usually using `bpy`. It should run from the current scene, selection, or active object. It should not be a full Blender add-on, installer, Blender UI panel, Blender menu/button creator, modal tool, blocking popup workflow, or something that only works from Blender's Text Editor.
+## The Script Contract
 
-The Python file must expose one callable FlowCell action entrypoint:
+FlowCell does not want a full Blender add-on. It wants one normal Python file with one callable action entrypoint.
 
-- `run_flowcell_action`
-- `main`
-- a function named `perform_*`
+Your file should:
 
-If the file is only a listener/bootstrap script or exposes unrelated helpers like `handle`/`server`, FlowCell now rejects it instead of creating a dead button.
+- use normal Blender Python, usually importing `bpy`
+- work from the current scene, selection, mode, or active object
+- expose one top-level entrypoint named `run_flowcell_action`, `main`, or `perform_*`
+- return a short result or raise a clear error
 
-## How To Structure The Script
-
-This is the part that matters most.
-
-FlowCell does not want a full Blender add-on. It wants one normal Python file that exposes one callable action function. That callable is what the button actually runs.
-
-Good mental model:
-
-- one file
-- one real action entrypoint
-- optional helper functions under it
-- action code that uses the current Blender scene, selection, mode, or active object
-- return a short result back to FlowCell
-
-Bad mental model:
+Your file should not be:
 
 - a background server
 - a socket listener
-- a one-time installer
-- a Blender panel/menu registration script
-- a script that only works when manually pressed from Blender's Text Editor
+- an installer
+- a Blender panel or menu registration script
+- a modal tool framework
+- a script that only works from Blender's Text Editor
 
-### Required Entrypoint Names
+If the file only exposes helpers like `handle`, `server`, `bootstrap`, or `register`, FlowCell rejects it.
 
-Your file must expose one of these top-level functions:
+## Start With This Shape
 
-- `run_flowcell_action`
-- `main`
-- any function whose name starts with `perform_`
-
-FlowCell looks for those names on purpose. If your file only contains helpers like `handle`, `server`, `bootstrap`, or `register`, it is the wrong shape for `Add Button`.
-
-### Recommended File Shape
-
-Use this structure:
+Use this unless you have a specific reason not to:
 
 ```python
 import bpy
 
 
 def perform_my_tool(context, data):
-    # Validate selection/state first.
     active = context.view_layer.objects.active
     if active is None:
         raise ValueError("Select one active object first.")
 
-    # Do the Blender work here.
-    active.location.x += 10.0
+    if active.type != "MESH":
+        raise ValueError("Active object must be a mesh.")
 
-    # Return a short status message.
-    return "Moved the active object 10 units on X."
+    # Replace this block with your actual logic.
+    active.location.z += 1.0
+
+    return {
+        "message": f"Raised {active.name} by 1 unit.",
+        "display": "Object updated",
+    }
 ```
 
-That is the simplest reliable shape.
+That is the safest default pattern.
 
-### What FlowCell Passes To Your Function
+## What FlowCell Calls
 
-FlowCell tries these call patterns in this order:
+FlowCell tries your function in this order:
 
 - `callback(context, data)`
 - `callback(context)`
@@ -103,10 +90,10 @@ def perform_my_tool():
 Best practice:
 
 - prefer `def perform_my_tool(context, data):`
-- use `context` instead of reaching for global state first
-- read optional values from `data` only if your action needs inputs beyond the current Blender state
+- use `context` first
+- use `data` only for optional inputs beyond the current Blender state
 
-### What Your Function Should Return
+## What To Return
 
 The action can return:
 
@@ -114,15 +101,13 @@ The action can return:
 - a dict
 - `None`
 
-Recommended return types:
-
-1. Simple success message:
+Recommended:
 
 ```python
 return "Created the support rim."
 ```
 
-2. Structured result:
+or:
 
 ```python
 return {
@@ -131,44 +116,40 @@ return {
 }
 ```
 
-How FlowCell uses those:
+Meaning:
 
 - `message` is the main completion text
 - `display` is optional extra UI text
-- any additional dict fields are passed through as payload
+- any extra dict fields are passed through as payload
 
-If you return `None`, FlowCell falls back to a generic completion message. That works, but it is worse for usability.
+If you return `None`, FlowCell falls back to a generic completion message.
 
-### How To Signal Failure
+## How To Fail Cleanly
 
-Raise an exception with a clear message:
+Raise a clear exception:
 
 ```python
 if context.mode != "OBJECT":
     raise ValueError("Switch to Object Mode first.")
 ```
 
-Good failures are:
-
-- specific
-- user-facing
-- about the actual missing precondition
-
-Examples:
+Good error messages:
 
 - `"Select exactly one mesh object."`
 - `"Open or save the .blend file first."`
 - `"Active object must be a mesh."`
 
-Avoid vague errors like:
+Bad error messages:
 
 - `"Failed"`
 - `"Error running tool"`
 - `"Bad state"`
 
-### Keep Helpers, But Keep One Real Entrypoint
+## Keep One Real Entrypoint
 
-This is good:
+Helpers are fine. One clear top-level action is required.
+
+Good:
 
 ```python
 import bpy
@@ -191,7 +172,7 @@ def perform_raise_active_mesh(context, data):
     return f"Raised {obj.name} by 2 units."
 ```
 
-This is bad:
+Bad:
 
 ```python
 def server():
@@ -202,11 +183,11 @@ def handle(conn, addr):
     ...
 ```
 
-That kind of file is infrastructure, not a button action.
+That is infrastructure, not a button action.
 
-### Use Top-Level Functions Only
+## Top-Level Only
 
-Define the action entrypoint at the top level of the file.
+Define the action entrypoint at file scope.
 
 Do not hide it inside:
 
@@ -230,60 +211,49 @@ class MyTool:
         ...
 ```
 
-### Keep The Script Focused On The Scene
+## What Good Button Scripts Usually Do
 
-Good Blender button scripts usually do one of these:
+Most good Blender button scripts do one focused scene task:
 
-- modify the selected objects
+- modify selected objects
 - inspect or clean the active mesh
 - create geometry
-- organize collections or names
+- organize names or collections
 - export from the current scene
 - prepare scene data for another app
 
 They usually do not:
 
 - stay resident forever
-- open their own persistent network service
-- manage Blender add-on installation
-- build a whole new UI system
-- depend on a manual operator being clicked elsewhere first
+- open a network service
+- install or register add-ons
+- build a separate UI system
+- depend on a separate manual Blender workflow outside the normal scene state
 
-### Minimal Template
+## What Happens After Add Button
 
-Use this as the default starter:
+If the script is valid, FlowCell:
 
-```python
-import bpy
+1. registers or installs the Blender-side action
+2. copies the action code into the live Blender runtime
+3. creates a matching `.ps1` wrapper in `Blender\FlowCellButtons`
+4. adds the new button to the selected FlowCell panel
+5. reports whether Blender must reload the add-on or restart
 
+## What FlowCell Generates
 
-def perform_my_tool(context, data):
-    active = context.view_layer.objects.active
-    if active is None:
-        raise ValueError("Select one active object first.")
+One wrapper equals one FlowCell button.
 
-    if active.type != "MESH":
-        raise ValueError("Active object must be a mesh.")
+That wrapper:
 
-    # Replace this block with your actual logic.
-    active.location.z += 1.0
+- lives in `Blender\FlowCellButtons`
+- stores the button description
+- records where the Python source function came from
+- dispatches through `Blender\SupportScripts\Invoke-BlenderFlowCellAction.ps1`
 
-    return {
-        "message": f"Raised {active.name} by 1 unit.",
-        "display": "Object updated",
-    }
-```
+Click path:
 
-### Checklist Before You Add The Button
-
-Before using `Add Button`, make sure the file:
-
-- imports what it needs, usually `bpy`
-- has one top-level entrypoint named `run_flowcell_action`, `main`, or `perform_*`
-- raises clear `ValueError` messages for bad selection/state
-- returns a useful message or dict
-- does real Blender work directly, instead of starting a background system
-- can run from the current Blender scene without manual Text Editor steps
+FlowCell button -> `.ps1` wrapper -> `Invoke-BlenderFlowCellAction.ps1` -> `flowcell_bridge.py` -> `flowcell_actions.py` -> Blender runs the action
 
 ## Full Path Map
 
@@ -333,26 +303,16 @@ Private rough/testing storage:
 - `Blender\ScriptDump`
 - `Blender\FlowCellButtons\ScriptDump`
 
-## Add Button Flow
+## Quick Checklist
 
-1. FlowCell asks for a Blender `.py` script from the Blender tab's `Add Button` flow.
-2. That script is treated as either a single action or a small tool set.
-3. FlowCell validates that the script exposes a supported FlowCell action entrypoint, then installs or registers the Blender-side action data so Blender has a callable function for the new button.
-4. FlowCell copies the selected script's code into this exact live Blender file:
-   `...\scripts\addons\blender_bridge\flowcell_actions.py`
-5. FlowCell creates matching `.ps1` wrappers in `Blender\FlowCellButtons`.
-6. Each wrapper launches the dispatcher at `Blender\SupportScripts\Invoke-BlenderFlowCellAction.ps1`.
-7. FlowCell adds the new button to the selected panel and reports whether Blender needs a reload or restart.
+Before you click `Add Button`, make sure the file:
 
-## Click Path
-
-FlowCell button
-
-- `Blender\FlowCellButtons\<wrapper>.ps1`
-- `Blender\SupportScripts\Invoke-BlenderFlowCellAction.ps1`
-- `flowcell_bridge.py` in the configured Blender add-on location
-- `flowcell_actions.py` in the configured Blender add-on location
-- Blender runs the inserted function
+- imports what it needs, usually `bpy`
+- has one top-level entrypoint named `run_flowcell_action`, `main`, or `perform_*`
+- raises clear `ValueError` messages for invalid state
+- returns a useful message or dict
+- does direct Blender scene work
+- does not try to be a background service or add-on package
 
 ## ScriptDump
 
