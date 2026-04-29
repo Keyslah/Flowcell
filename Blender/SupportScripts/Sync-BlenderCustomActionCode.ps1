@@ -231,6 +231,16 @@ function Convert-TextToCommentLines([string]$Text) {
     return @(($normalized -split "`n", -1) | ForEach-Object { '# ' + [string]$_ })
 }
 
+function Write-Utf8NoBomFile([string]$Path, [string]$Content) {
+    $parent = Split-Path -Parent $Path
+    if (-not [string]::IsNullOrWhiteSpace($parent)) {
+        New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    }
+
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, [string]$Content, $utf8NoBom)
+}
+
 function Set-GeneratedCustomSection([string]$Path, [string]$SectionText) {
     $raw = Get-Content -LiteralPath $Path -Raw
     $pattern = '(?s)\r?\n?# FLOWCELL CUSTOM ACTIONS START - AUTO-GENERATED.*?# FLOWCELL CUSTOM ACTIONS END - AUTO-GENERATED\r?\n?'
@@ -244,7 +254,7 @@ function Set-GeneratedCustomSection([string]$Path, [string]$SectionText) {
         $raw = $raw.TrimEnd("`r", "`n") + "`r`n`r`n" + $SectionText + "`r`n"
     }
 
-    Set-Content -LiteralPath $Path -Value $raw -Encoding UTF8
+    Write-Utf8NoBomFile -Path $Path -Content $raw
 }
 
 $normalizedEntries = New-Object System.Collections.Generic.List[object]
