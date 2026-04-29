@@ -1852,10 +1852,29 @@ function Get-DefaultFlowCellState {
     return [pscustomobject]@{
         SelectedProgramTabId = [int]$script:State.SelectedProgramTabId
         ButtonScale = 1.0
+        StartupRestorePopoutsOnly = $true
         MainWindowBounds = $null
         Programs = @($programStates)
         ToolPopouts = @()
         PopoutClusters = @()
+    }
+}
+
+function Test-FlowCellStartupRestorePopoutsOnlyEnabled {
+    if (-not $script:FlowCellState) { return $true }
+    if ($script:FlowCellState.PSObject.Properties['StartupRestorePopoutsOnly']) {
+        return [bool]$script:FlowCellState.StartupRestorePopoutsOnly
+    }
+    return $true
+}
+
+function Set-FlowCellStartupRestorePopoutsOnly([bool]$Enabled) {
+    if (-not $script:FlowCellState) { return }
+    if ($script:FlowCellState.PSObject.Properties['StartupRestorePopoutsOnly']) {
+        $script:FlowCellState.StartupRestorePopoutsOnly = [bool]$Enabled
+    }
+    else {
+        $script:FlowCellState | Add-Member -MemberType NoteProperty -Name StartupRestorePopoutsOnly -Value ([bool]$Enabled)
     }
 }
 
@@ -1902,54 +1921,19 @@ function ConvertTo-FlowCellPopoutClusterState($Cluster) {
     }
 }
 
+function Get-FlowCellNormalizedToolPopoutLayoutMode([string]$LayoutMode) {
+    switch ([string]$LayoutMode) {
+        'Individual' { return 'Individual' }
+        'Group' { return 'Group' }
+        'Horizontal' { return 'Group' }
+        'Vertical' { return 'Group' }
+        default { return 'Group' }
+    }
+}
+
 function Get-FlowCellLegacyToolPopoutExpansion($ToolPopout) {
     if ($null -eq $ToolPopout) { return @() }
-    $buttonIds = @($ToolPopout.ButtonIds | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ })
-    if (@($buttonIds).Count -le 1) { return @($ToolPopout) }
-
-    $baseBounds = if ($ToolPopout.Bounds -and (Test-FlowCellPopoutBoundsVisible $ToolPopout.Bounds)) {
-        $ToolPopout.Bounds
-    }
-    else {
-        Get-FlowCellCenteredPopoutBounds -Width 340 -Height 220
-    }
-
-    $toolStates = @()
-    $memberIds = @()
-    $count = [double]@($buttonIds).Count
-    $perWidth = [Math]::Max([double][Math]::Round(([double]$baseBounds.Width / $count), 2), 220)
-    $perHeight = [Math]::Max([double][Math]::Round(([double]$baseBounds.Height / $count), 2), 160)
-    for ($index = 0; $index -lt @($buttonIds).Count; $index++) {
-        $buttonId = [string]$buttonIds[$index]
-        $memberId = Get-FlowCellToolButtonPopoutId -ProgramTabId ([int]$ToolPopout.ProgramTabId) -PanelId ([string]$ToolPopout.PanelId) -ButtonId $buttonId
-        $memberIds += $memberId
-        $stateBounds = switch ([string]$ToolPopout.LayoutMode) {
-            'Horizontal' {
-                New-FlowCellPopoutBounds -Left ([double]$baseBounds.Left + ($perWidth * $index)) -Top ([double]$baseBounds.Top) -Width $perWidth -Height ([double]$baseBounds.Height)
-            }
-            default {
-                New-FlowCellPopoutBounds -Left ([double]$baseBounds.Left) -Top ([double]$baseBounds.Top + ($perHeight * $index)) -Width ([double]$baseBounds.Width) -Height $perHeight
-            }
-        }
-        $toolStates += [pscustomobject]@{
-            ProgramTabId = [int]$ToolPopout.ProgramTabId
-            PanelId = [string]$ToolPopout.PanelId
-            ButtonIds = @($buttonId)
-            LayoutMode = 'Individual'
-            Bounds = $stateBounds
-        }
-    }
-
-    return @(
-        [pscustomobject]@{
-            ToolStates = @($toolStates)
-            ClusterState = [pscustomobject]@{
-                Id = 'cluster_{0}' -f [guid]::NewGuid().ToString('N')
-                MemberIds = @($memberIds)
-                GrabberOffset = New-FlowCellPoint -X 0 -Y -28
-            }
-        }
-    )
+    return @($ToolPopout)
 }
 
 function ConvertTo-FlowCellToolPopoutState($ToolPopout) {
@@ -1965,12 +1949,7 @@ function ConvertTo-FlowCellToolPopoutState($ToolPopout) {
     )
     if ($programTabId -le 0 -or [string]::IsNullOrWhiteSpace($panelId) -or @($buttonIds).Count -eq 0) { return $null }
 
-    $layoutMode = if ($ToolPopout.PSObject.Properties['LayoutMode']) { [string]$ToolPopout.LayoutMode } else { 'Vertical' }
-    switch ($layoutMode) {
-        'Horizontal' { }
-        'Individual' { }
-        default { $layoutMode = 'Vertical' }
-    }
+    $layoutMode = Get-FlowCellNormalizedToolPopoutLayoutMode -LayoutMode $(if ($ToolPopout.PSObject.Properties['LayoutMode']) { [string]$ToolPopout.LayoutMode } else { 'Group' })
 
     return [pscustomobject]@{
         ProgramTabId = $programTabId
@@ -1988,6 +1967,7 @@ function Read-FlowCellState {
         return [pscustomobject]@{
             SelectedProgramTabId = 1
             ButtonScale = 1.0
+            StartupRestorePopoutsOnly = $true
             MainWindowBounds = $null
             Programs = @()
             ToolPopouts = @()
@@ -2029,24 +2009,12 @@ function Read-FlowCellState {
         foreach ($toolPopout in @($state.ToolPopouts)) {
             $converted = ConvertTo-FlowCellToolPopoutState $toolPopout
             if ($null -eq $converted) { continue }
-            if (@($converted.ButtonIds).Count -le 1) {
-                $toolPopouts += [pscustomobject]@{
-                    ProgramTabId = [int]$converted.ProgramTabId
-                    PanelId = [string]$converted.PanelId
-                    ButtonIds = @($converted.ButtonIds | ForEach-Object { [string]$_ })
-                    LayoutMode = 'Individual'
-                    Bounds = $converted.Bounds
-                }
-                continue
-            }
-
-            foreach ($expanded in @(Get-FlowCellLegacyToolPopoutExpansion -ToolPopout $converted)) {
-                if ($expanded.PSObject.Properties['ToolStates']) {
-                    $toolPopouts += @($expanded.ToolStates)
-                }
-                if ($expanded.PSObject.Properties['ClusterState']) {
-                    $clusterStates += $expanded.ClusterState
-                }
+            $toolPopouts += [pscustomobject]@{
+                ProgramTabId = [int]$converted.ProgramTabId
+                PanelId = [string]$converted.PanelId
+                ButtonIds = @($converted.ButtonIds | ForEach-Object { [string]$_ })
+                LayoutMode = [string]$converted.LayoutMode
+                Bounds = $converted.Bounds
             }
         }
     }
@@ -2080,7 +2048,7 @@ function Read-FlowCellState {
             $embeddedOnly = $true
             $allToolPopoutsPresent = $true
             foreach ($button in @($panelButtons)) {
-                if (-not ((Test-FlowCellAlignmentToolButton $button) -or (Test-FlowCellFlattenRevolveToolButton $button))) {
+                if (-not (Test-FlowCellMultiButtonToolButton $button)) {
                     $embeddedOnly = $false
                     break
                 }
@@ -2115,6 +2083,7 @@ function Read-FlowCellState {
     return [pscustomobject]@{
         SelectedProgramTabId = $selectedProgramTabId
         ButtonScale = if ($state -and $state.PSObject.Properties['ButtonScale']) { [double]$state.ButtonScale } else { 1.0 }
+        StartupRestorePopoutsOnly = if ($state -and $state.PSObject.Properties['StartupRestorePopoutsOnly']) { [bool]$state.StartupRestorePopoutsOnly } else { $true }
         MainWindowBounds = if ($state -and $state.PSObject.Properties['MainWindowBounds'] -and $state.MainWindowBounds) {
             New-FlowCellPopoutBounds -Left ([double]$state.MainWindowBounds.Left) -Top ([double]$state.MainWindowBounds.Top) -Width ([double]$state.MainWindowBounds.Width) -Height ([double]$state.MainWindowBounds.Height)
         } else { $null }
@@ -2131,6 +2100,7 @@ function Save-FlowCellState {
     $payload = [pscustomobject]@{
         SelectedProgramTabId = [int]$script:FlowCellState.SelectedProgramTabId
         ButtonScale = [double]$(if ($script:FlowCellState.PSObject.Properties['ButtonScale']) { $script:FlowCellState.ButtonScale } else { 1.0 })
+        StartupRestorePopoutsOnly = [bool]$(if ($script:FlowCellState.PSObject.Properties['StartupRestorePopoutsOnly']) { $script:FlowCellState.StartupRestorePopoutsOnly } else { $true })
         MainWindowBounds = if ($script:FlowCellState.PSObject.Properties['MainWindowBounds'] -and $script:FlowCellState.MainWindowBounds) {
             [pscustomobject]@{
                 Left = [double]$(if ($script:FlowCellState.MainWindowBounds.PSObject.Properties['Left']) { $script:FlowCellState.MainWindowBounds.Left } else { 0 })
@@ -3842,7 +3812,7 @@ function ConvertTo-FlowCellPopoutLayoutPayload($Payload) {
                             PanelName = [string]$(if ($toolPopout.PSObject.Properties['PanelName']) { $toolPopout.PanelName } else { '' })
                             ButtonIds = @(if ($toolPopout.PSObject.Properties['ButtonIds']) { $toolPopout.ButtonIds } else { @() })
                             ButtonLabels = @(if ($toolPopout.PSObject.Properties['ButtonLabels']) { $toolPopout.ButtonLabels } else { @() })
-                            LayoutMode = [string]$(if ($toolPopout.PSObject.Properties['LayoutMode']) { $toolPopout.LayoutMode } else { 'Individual' })
+                            LayoutMode = [string](Get-FlowCellNormalizedToolPopoutLayoutMode -LayoutMode $(if ($toolPopout.PSObject.Properties['LayoutMode']) { $toolPopout.LayoutMode } else { 'Group' }))
                             Bounds = Copy-FlowCellLayoutBounds $(if ($toolPopout.PSObject.Properties['Bounds']) { $toolPopout.Bounds } else { $null })
                         }
                     }
@@ -4065,8 +4035,7 @@ function Import-FlowCellLayout {
         if ($null -eq $programState -or $null -eq $panel) { continue }
         $buttonIds = @(Resolve-FlowCellLayoutToolButtonIds -Panel $panel -ToolPopout $toolPopout)
         if (@($buttonIds).Count -eq 0) { continue }
-        $layoutMode = [string]$(if ($toolPopout.PSObject.Properties['LayoutMode']) { $toolPopout.LayoutMode } else { 'Individual' })
-        if ($layoutMode -notin @('Vertical', 'Horizontal', 'Individual')) { $layoutMode = 'Individual' }
+        $layoutMode = Get-FlowCellNormalizedToolPopoutLayoutMode -LayoutMode $(if ($toolPopout.PSObject.Properties['LayoutMode']) { [string]$toolPopout.LayoutMode } else { 'Group' })
         $bounds = Copy-FlowCellLayoutBounds $(if ($toolPopout.PSObject.Properties['Bounds']) { $toolPopout.Bounds } else { $null })
         Set-FlowCellToolPopoutState -ProgramTabId ([int]$programState.ProgramTabId) -PanelId ([string]$panel.Id) -ButtonIds @($buttonIds) -LayoutMode $layoutMode -Bounds $bounds | Out-Null
         $restoredToolCount += 1
@@ -4446,19 +4415,68 @@ function Get-FlowCellExistingToolPopoutEntryForTarget([string]$TargetKey) {
     return $entry
 }
 
+function Get-FlowCellLiveToolPopoutEntriesForTargetKeys([string[]]$TargetKeys) {
+    $resolvedTargetKeys = @($TargetKeys | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ })
+    if (@($resolvedTargetKeys).Count -eq 0) { return @() }
+
+    $entries = @()
+    $seenEntryIds = New-Object System.Collections.Generic.HashSet[string]
+    foreach ($targetKey in @($resolvedTargetKeys)) {
+        $entry = Get-FlowCellExistingToolPopoutEntryForTarget -TargetKey ([string]$targetKey)
+        if (-not $entry) { continue }
+        $entryId = if ($entry.PSObject.Properties['PopoutId'] -and -not [string]::IsNullOrWhiteSpace([string]$entry.PopoutId)) {
+            [string]$entry.PopoutId
+        }
+        else {
+            [string]$entry.Window.Title
+        }
+        if ($seenEntryIds.Add($entryId)) {
+            $entries += $entry
+        }
+    }
+    return @($entries)
+}
+
+function Test-FlowCellToolPopoutEntryMatchesSpec($Entry, [int]$ProgramTabId, [string]$PanelId, [string[]]$ButtonIds, [string]$LayoutMode) {
+    if ($null -eq $Entry) { return $false }
+    if (-not $Entry.PSObject.Properties['ProgramTabId'] -or [int]$Entry.ProgramTabId -ne $ProgramTabId) { return $false }
+    if (-not $Entry.PSObject.Properties['PanelId'] -or [string]$Entry.PanelId -ne [string]$PanelId) { return $false }
+    if (-not $Entry.PSObject.Properties['LayoutMode'] -or [string]$Entry.LayoutMode -ne [string]$LayoutMode) { return $false }
+    if (-not $Entry.PSObject.Properties['ButtonIds']) { return $false }
+
+    $expectedButtonIds = @($ButtonIds | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ } | Sort-Object)
+    $entryButtonIds = @($Entry.ButtonIds | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ } | Sort-Object)
+    if (@($expectedButtonIds).Count -ne @($entryButtonIds).Count) { return $false }
+
+    for ($index = 0; $index -lt @($expectedButtonIds).Count; $index++) {
+        if ([string]$expectedButtonIds[$index] -ne [string]$entryButtonIds[$index]) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
+function Close-FlowCellToolPopoutEntry($Entry) {
+    if ($null -eq $Entry -or -not $Entry.PSObject.Properties['Window'] -or $null -eq $Entry.Window) { return }
+    if (-not $Entry.Window.IsLoaded) { return }
+    if ([string]$Entry.Window.Tag -in @('closing', 'shutdown')) { return }
+    try {
+        $Entry.Window.Close()
+    }
+    catch {
+    }
+}
+
 function Get-FlowCellPopoutMode([object]$ModeControl) {
-    if ($null -eq $ModeControl) { return 'Vertical' }
+    if ($null -eq $ModeControl) { return 'Group' }
     $selected = $ModeControl.SelectedItem
     if ($selected -and $selected.PSObject.Properties['Content']) {
         $selected = $selected.Content
     }
     $mode = [string]$selected
     if ([string]::IsNullOrWhiteSpace($mode)) { $mode = [string]$ModeControl.Text }
-    switch -Regex ($mode) {
-        '^Horizontal$' { return 'Horizontal' }
-        '^Individual$' { return 'Individual' }
-        default { return 'Vertical' }
-    }
+    return (Get-FlowCellNormalizedToolPopoutLayoutMode -LayoutMode $mode)
 }
 
 function Get-FlowCellProgramState([int]$ProgramTabId) {
@@ -4506,10 +4524,36 @@ function Sync-FlowCellButtonsFromBindings {
             $updatedButtons = @()
             foreach ($button in @($panel.Buttons)) {
                 if ([string]$button.Kind -eq 'script') {
-                    $binding = @($script:State.ScriptBindings | Where-Object { $_.Id -eq [int]$button.BindingId } | Select-Object -First 1)
+                    $bindingId = [int]$(if ($button.PSObject.Properties['BindingId']) { $button.BindingId } else { 0 })
+                    $binding = @($script:State.ScriptBindings | Where-Object { $_.Id -eq $bindingId } | Select-Object -First 1)
+                    if (
+                        @($binding).Count -eq 0 -and
+                        $script:State -and
+                        $button.PSObject.Properties['Target'] -and
+                        -not [string]::IsNullOrWhiteSpace([string]$button.Target)
+                    ) {
+                        $buttonTarget = [string]$button.Target
+                        $programTabId = [int]$(if ($programState.PSObject.Properties['ProgramTabId']) { $programState.ProgramTabId } else { 0 })
+                        $binding = @(
+                            $script:State.ScriptBindings |
+                                Where-Object {
+                                    [string]$_.Target -eq $buttonTarget -and
+                                    [int]$(if ($_.PSObject.Properties['ProgramTabId']) { $_.ProgramTabId } else { 0 }) -eq $programTabId
+                                } |
+                                Select-Object -First 1
+                        )
+                        if (@($binding).Count -eq 0) {
+                            $binding = @(
+                                $script:State.ScriptBindings |
+                                    Where-Object { [string]$_.Target -eq $buttonTarget } |
+                                    Select-Object -First 1
+                            )
+                        }
+                    }
                     if (@($binding).Count -gt 0) {
                         $binding = $binding[0]
-                        $button.Shortcut = [string]$binding.Shortcut
+                        $button.BindingId = [int]$binding.Id
+                        $button.Shortcut = Get-CanonicalShortcut -Value ([string]$binding.Shortcut)
                         if (-not [string]::IsNullOrWhiteSpace([string]$binding.Target)) {
                             $button.Target = [string]$binding.Target
                             if ([string]::IsNullOrWhiteSpace([string]$button.Label)) {
@@ -4517,13 +4561,14 @@ function Sync-FlowCellButtonsFromBindings {
                             }
                         }
                     }
-                    elseif ([int]$(if ($button.PSObject.Properties['BindingId']) { $button.BindingId } else { 0 }) -gt 0) {
+                    elseif ($bindingId -gt 0) {
                         $button.Shortcut = ''
+                        $button.BindingId = 0
                     }
                 }
                 elseif ([string]$button.Kind -eq 'macro') {
                     if ($script:State.ActionHotkeys.Contains([string]$button.Target)) {
-                        $button.Shortcut = [string]$script:State.ActionHotkeys[[string]$button.Target]
+                        $button.Shortcut = Get-CanonicalShortcut -Value ([string]$script:State.ActionHotkeys[[string]$button.Target])
                     }
                     else {
                         $button.Shortcut = ''
@@ -4731,7 +4776,7 @@ function Read-State {
             $scriptBindings += [pscustomobject]@{
                 Kind = 'script'
                 Id = $id
-                Shortcut = [string]$ini[$section].Shortcut
+                Shortcut = Get-CanonicalShortcut -Value ([string]$ini[$section].Shortcut)
                 Target = [string]$ini[$section].ScriptPath
                 Status = 'Active'
                 ProgramTabId = if ($ini[$section].Contains('ProgramTabId') -and $ini[$section].ProgramTabId -match '^\d+$') { [int]$ini[$section].ProgramTabId } else { 0 }
@@ -4766,7 +4811,7 @@ function Read-State {
     $actionHotkeys = [ordered]@{}
     if ($ini.Contains('ActionHotkeys')) {
         foreach ($entry in $ini.ActionHotkeys.GetEnumerator()) {
-            if ($entry.Value) { $actionHotkeys[$entry.Key] = [string]$entry.Value }
+            if ($entry.Value) { $actionHotkeys[$entry.Key] = Get-CanonicalShortcut -Value ([string]$entry.Value) }
         }
     }
     $macroEditorColumns = [ordered]@{
@@ -4813,7 +4858,7 @@ function Save-State {
     $lines.Add('')
     foreach ($binding in @($script:State.ScriptBindings | Sort-Object Id)) {
         $lines.Add('[Binding_' + [string]$binding.Id + ']')
-        $lines.Add('Shortcut=' + [string]$binding.Shortcut)
+        $lines.Add('Shortcut=' + (Get-CanonicalShortcut -Value ([string]$binding.Shortcut)))
         $lines.Add('ScriptPath=' + [string]$binding.Target)
         if ($binding.PSObject.Properties['ProgramTabId'] -and [int]$binding.ProgramTabId -gt 0) {
             $lines.Add('ProgramTabId=' + [string][int]$binding.ProgramTabId)
@@ -4837,8 +4882,9 @@ function Save-State {
     }
     $lines.Add('[ActionHotkeys]')
     foreach ($entry in @($script:State.ActionHotkeys.GetEnumerator() | Sort-Object Key)) {
-        if (-not [string]::IsNullOrWhiteSpace([string]$entry.Key) -and $entry.Value) {
-            $lines.Add(([string]$entry.Key + '=' + [string]$entry.Value))
+        $shortcutValue = Get-CanonicalShortcut -Value ([string]$entry.Value)
+        if (-not [string]::IsNullOrWhiteSpace([string]$entry.Key) -and $shortcutValue) {
+            $lines.Add(([string]$entry.Key + '=' + $shortcutValue))
         }
     }
     $lines.Add('')
@@ -4852,9 +4898,251 @@ function Save-State {
     }
 }
 
+function Get-CanonicalShortcut([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
+    $compact = [regex]::Replace($Value.Trim(), '\s+', '')
+    if ([string]::IsNullOrWhiteSpace($compact)) { return '' }
+
+    $altGrPlaceholder = '__FLOWCELL_ALTGR__'
+    $compact = $compact.Replace('<^>!', $altGrPlaceholder)
+    $compact = $compact.Replace('<^', '^').Replace('>^', '^')
+    $compact = $compact.Replace('<!', '!').Replace('>!', '!')
+    $compact = $compact.Replace('<+', '+').Replace('>+', '+')
+    $compact = $compact.Replace('<#', '#').Replace('>#', '#')
+    $compact = $compact.Replace($altGrPlaceholder, '<^>!')
+    return $compact
+}
+
 function Normalize-Shortcut([string]$Value) {
     if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
-    return ([regex]::Replace($Value.Trim().ToLowerInvariant(), '\s+', ''))
+    return ([regex]::Replace((Get-CanonicalShortcut -Value $Value).ToLowerInvariant(), '\s+', ''))
+}
+
+function Format-ShortcutKeyTokenForDisplay([string]$Token) {
+    if ([string]::IsNullOrWhiteSpace($Token)) { return '' }
+    $trimmed = $Token.Trim()
+    if ($trimmed.StartsWith('{') -and $trimmed.EndsWith('}') -and $trimmed.Length -gt 2) {
+        $trimmed = $trimmed.Substring(1, $trimmed.Length - 2)
+    }
+
+    switch -Regex ($trimmed.ToLowerInvariant()) {
+        '^ctrl$|^control$' { return 'Ctrl' }
+        '^alt$' { return 'Alt' }
+        '^shift$' { return 'Shift' }
+        '^esc$|^escape$' { return 'Esc' }
+        '^enter$|^return$' { return 'Enter' }
+        '^tab$' { return 'Tab' }
+        '^space$' { return 'Space' }
+        '^backspace$|^bs$' { return 'Backspace' }
+        '^delete$|^del$' { return 'Delete' }
+        '^insert$|^ins$' { return 'Insert' }
+        '^home$' { return 'Home' }
+        '^end$' { return 'End' }
+        '^pgup$|^prior$' { return 'Page Up' }
+        '^pgdn$|^next$' { return 'Page Down' }
+        '^up$' { return 'Up' }
+        '^down$' { return 'Down' }
+        '^left$' { return 'Left' }
+        '^right$' { return 'Right' }
+        '^capslock$' { return 'Caps Lock' }
+        '^numlock$' { return 'Num Lock' }
+        '^scrolllock$' { return 'Scroll Lock' }
+        '^appskey$' { return 'Menu' }
+        '^wheelup$' { return 'Wheel Up' }
+        '^wheeldown$' { return 'Wheel Down' }
+        '^lbutton$' { return 'Left Mouse' }
+        '^rbutton$' { return 'Right Mouse' }
+        '^mbutton$' { return 'Middle Mouse' }
+        '^f([1-9]|1[0-9]|2[0-4])$' { return $trimmed.ToUpperInvariant() }
+        '^[a-z]$' { return $trimmed.ToUpperInvariant() }
+        default {
+            return $trimmed
+        }
+    }
+}
+
+function Format-ShortcutForDisplay([string]$Shortcut) {
+    if ([string]::IsNullOrWhiteSpace($Shortcut)) { return '' }
+    $trimmed = $Shortcut.Trim()
+    $rawCompact = [regex]::Replace($trimmed, '\s+', '')
+
+    if ($rawCompact -match '[\^!\+]') {
+        $parts = New-Object System.Collections.Generic.List[string]
+        $index = 0
+        while ($index -lt $rawCompact.Length) {
+            $remaining = $rawCompact.Substring($index)
+
+            if ($remaining.StartsWith('<^>!')) {
+                if (-not $parts.Contains('AltGr')) { $parts.Add('AltGr') }
+                $index += 4
+                continue
+            }
+            if ($remaining.StartsWith('<^')) {
+                if (-not $parts.Contains('Left Ctrl')) { $parts.Add('Left Ctrl') }
+                $index += 2
+                continue
+            }
+            if ($remaining.StartsWith('>^')) {
+                if (-not $parts.Contains('Right Ctrl')) { $parts.Add('Right Ctrl') }
+                $index += 2
+                continue
+            }
+            if ($remaining.StartsWith('<!')) {
+                if (-not $parts.Contains('Left Alt')) { $parts.Add('Left Alt') }
+                $index += 2
+                continue
+            }
+            if ($remaining.StartsWith('>!')) {
+                if (-not $parts.Contains('Right Alt')) { $parts.Add('Right Alt') }
+                $index += 2
+                continue
+            }
+            if ($remaining.StartsWith('<+')) {
+                if (-not $parts.Contains('Left Shift')) { $parts.Add('Left Shift') }
+                $index += 2
+                continue
+            }
+            if ($remaining.StartsWith('>+')) {
+                if (-not $parts.Contains('Right Shift')) { $parts.Add('Right Shift') }
+                $index += 2
+                continue
+            }
+            if ($remaining.StartsWith('<#')) {
+                if (-not $parts.Contains('Left Win')) { $parts.Add('Left Win') }
+                $index += 2
+                continue
+            }
+            if ($remaining.StartsWith('>#')) {
+                if (-not $parts.Contains('Right Win')) { $parts.Add('Right Win') }
+                $index += 2
+                continue
+            }
+
+            $currentToken = $rawCompact.Substring($index, 1)
+            if ($currentToken -eq '^') {
+                if (-not $parts.Contains('Ctrl')) { $parts.Add('Ctrl') }
+                $index += 1
+                continue
+            }
+            if ($currentToken -eq '!') {
+                if (-not $parts.Contains('Alt')) { $parts.Add('Alt') }
+                $index += 1
+                continue
+            }
+            if ($currentToken -eq '+') {
+                if (-not $parts.Contains('Shift')) { $parts.Add('Shift') }
+                $index += 1
+                continue
+            }
+            if ($currentToken -eq '#') {
+                if (-not $parts.Contains('Win')) { $parts.Add('Win') }
+                $index += 1
+                continue
+            }
+            break
+        }
+
+        $keyToken = if ($index -lt $rawCompact.Length) { $rawCompact.Substring($index) } else { '' }
+        $keyDisplay = Format-ShortcutKeyTokenForDisplay -Token $keyToken
+        if (-not [string]::IsNullOrWhiteSpace($keyDisplay)) {
+            $parts.Add($keyDisplay)
+        }
+        return (($parts | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join ' + ')
+    }
+
+    $tokens = @($trimmed -split '\s*\+\s*' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($tokens.Count -gt 1) {
+        return ((@($tokens | ForEach-Object { Format-ShortcutKeyTokenForDisplay -Token $_ }) | Where-Object {
+            -not [string]::IsNullOrWhiteSpace($_)
+        }) -join ' + ')
+    }
+
+    return (Format-ShortcutKeyTokenForDisplay -Token $trimmed)
+}
+
+function New-ShortcutDisplayItem([string]$RawShortcut) {
+    $rawValue = Get-CanonicalShortcut -Value ([string]$RawShortcut)
+    return [pscustomobject]@{
+        RawShortcut = $rawValue
+        Display = if ([string]::IsNullOrWhiteSpace($rawValue)) { '' } else { Format-ShortcutForDisplay -Shortcut $rawValue }
+    }
+}
+
+function Convert-ShortcutDisplayTokenToRaw([string]$Token) {
+    if ([string]::IsNullOrWhiteSpace($Token)) { return '' }
+    $trimmed = $Token.Trim()
+    switch -Regex ($trimmed.ToLowerInvariant()) {
+        '^left\s+ctrl$|^left\s+control$' { return '<^' }
+        '^right\s+ctrl$|^right\s+control$' { return '>^' }
+        '^ctrl$|^control$' { return '^' }
+        '^left\s+alt$' { return '<!' }
+        '^right\s+alt$' { return '>!' }
+        '^altgr$' { return '<^>!' }
+        '^alt$' { return '!' }
+        '^left\s+shift$' { return '<+' }
+        '^right\s+shift$' { return '>+' }
+        '^shift$' { return '+' }
+        '^left\s+win(dows)?$' { return '<#' }
+        '^right\s+win(dows)?$' { return '>#' }
+        '^win(dows)?$' { return '#' }
+        '^esc$|^escape$' { return 'Esc' }
+        '^enter$|^return$' { return 'Enter' }
+        '^tab$' { return 'Tab' }
+        '^space$' { return 'Space' }
+        '^backspace$|^bs$' { return 'Backspace' }
+        '^delete$|^del$' { return 'Delete' }
+        '^insert$|^ins$' { return 'Insert' }
+        '^home$' { return 'Home' }
+        '^end$' { return 'End' }
+        '^page\s+up$|^pgup$|^prior$' { return 'PgUp' }
+        '^page\s+down$|^pgdn$|^next$' { return 'PgDn' }
+        '^up$' { return 'Up' }
+        '^down$' { return 'Down' }
+        '^left$' { return 'Left' }
+        '^right$' { return 'Right' }
+        '^caps\s+lock$|^capslock$' { return 'CapsLock' }
+        '^num\s+lock$|^numlock$' { return 'NumLock' }
+        '^scroll\s+lock$|^scrolllock$' { return 'ScrollLock' }
+        '^menu$|^appskey$' { return 'AppsKey' }
+        '^f([1-9]|1[0-9]|2[0-4])$' { return $trimmed.ToUpperInvariant() }
+        '^[a-z]$' { return $trimmed.ToUpperInvariant() }
+        '^[0-9]$' { return $trimmed }
+        '^-$|^=$' { return $trimmed }
+        default { return '' }
+    }
+}
+
+function Convert-ShortcutDisplayToRaw([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
+    $tokens = @($Value.Trim() -split '\s*\+\s*' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if (@($tokens).Count -eq 0) { return '' }
+
+    $parts = New-Object System.Collections.Generic.List[string]
+    foreach ($token in $tokens) {
+        $rawToken = Convert-ShortcutDisplayTokenToRaw -Token $token
+        if ([string]::IsNullOrWhiteSpace($rawToken)) { return '' }
+        [void]$parts.Add($rawToken)
+    }
+    return ($parts -join '')
+}
+
+function Resolve-ShortcutDisplaySelection([string]$Value, [object[]]$Items) {
+    $trimmed = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($trimmed)) { return '' }
+    $trimmed = $trimmed.Trim()
+    foreach ($item in @($Items)) {
+        if ($null -eq $item) { continue }
+        $rawShortcut = Get-CanonicalShortcut -Value $(if ($item.PSObject.Properties['RawShortcut']) { [string]$item.RawShortcut } else { [string]$item })
+        $displayShortcut = if ($item.PSObject.Properties['Display']) { [string]$item.Display } else { Format-ShortcutForDisplay -Shortcut $rawShortcut }
+        if ($trimmed -eq $rawShortcut -or $trimmed -eq $displayShortcut) {
+            return $rawShortcut
+        }
+    }
+    $displayParsed = Convert-ShortcutDisplayToRaw -Value $trimmed
+    if (-not [string]::IsNullOrWhiteSpace($displayParsed)) {
+        return (Get-CanonicalShortcut -Value $displayParsed)
+    }
+    return (Get-CanonicalShortcut -Value $trimmed)
 }
 
 function Convert-VirtualKeyCodeToShortcutToken([int]$KeyCode) {
@@ -5118,6 +5406,7 @@ function Show-ShortcutPickerDialog([string]$InitialValue = '') {
         Get-AvailableCandidateShortcuts -IncludeShortcut $InitialValue |
         ForEach-Object { [string]$_ }
     )
+    $candidateItems = @($candidates | ForEach-Object { New-ShortcutDisplayItem -RawShortcut ([string]$_) })
 
     $xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -5160,20 +5449,25 @@ function Show-ShortcutPickerDialog([string]$InitialValue = '') {
 
     $textBox = $dialog.FindName('ShortcutTextBox')
     $listBox = $dialog.FindName('ShortcutList')
-    foreach ($candidate in $candidates) { [void]$listBox.Items.Add($candidate) }
+    $listBox.DisplayMemberPath = 'Display'
+    foreach ($candidate in $candidateItems) { [void]$listBox.Items.Add($candidate) }
 
     if ($InitialValue) {
-        $textBox.Text = $InitialValue
-        if ($candidates -contains $InitialValue) { $listBox.SelectedItem = $InitialValue }
+        $normalizedInitialValue = Normalize-Shortcut -Value $InitialValue
+        $matchingItem = @($candidateItems | Where-Object { (Normalize-Shortcut -Value ([string]$_.RawShortcut)) -eq $normalizedInitialValue } | Select-Object -First 1)
+        $textBox.Text = Format-ShortcutForDisplay -Shortcut $InitialValue
+        if (@($matchingItem).Count -gt 0) { $listBox.SelectedItem = $matchingItem[0] }
     }
     elseif ($listBox.Items.Count -gt 0) {
         $listBox.SelectedIndex = 0
-        $textBox.Text = [string]$listBox.SelectedItem
+        if ($listBox.SelectedItem -and $listBox.SelectedItem.PSObject.Properties['Display']) {
+            $textBox.Text = [string]$listBox.SelectedItem.Display
+        }
     }
 
     $script:__shortcutSelection = $null
     $accept = {
-        $script:__shortcutSelection = $textBox.Text.Trim()
+        $script:__shortcutSelection = Resolve-ShortcutDisplaySelection -Value ($textBox.Text.Trim()) -Items @($candidateItems)
         $dialog.DialogResult = $true
         $dialog.Close()
     }
@@ -5184,7 +5478,9 @@ function Show-ShortcutPickerDialog([string]$InitialValue = '') {
         $dialog.Close()
     })
     $listBox.Add_SelectionChanged({
-        if ($listBox.SelectedItem) { $textBox.Text = [string]$listBox.SelectedItem }
+        if ($listBox.SelectedItem -and $listBox.SelectedItem.PSObject.Properties['Display']) {
+            $textBox.Text = [string]$listBox.SelectedItem.Display
+        }
     })
     $listBox.Add_MouseDoubleClick({
         if ($listBox.SelectedItem) { & $accept }
@@ -6201,7 +6497,7 @@ function Edit-RecordedMacro {
 
     $updateActiveShortcutDisplay = {
         param([string]$shortcutValue)
-        Set-ControlTextValue $activeShortcutBox $(if ([string]::IsNullOrWhiteSpace($shortcutValue)) { 'NO SHORTCUT BOUND' } else { [string]$shortcutValue })
+        Set-ControlTextValue $activeShortcutBox $(if ([string]::IsNullOrWhiteSpace($shortcutValue)) { 'NO SHORTCUT BOUND' } else { Format-ShortcutForDisplay -Shortcut ([string]$shortcutValue) })
     }
 
     $getProgramTabBinding = {
@@ -6226,7 +6522,7 @@ function Edit-RecordedMacro {
 
         $binding = & $getProgramTabBinding ([int]$currentProgramTab.Id)
         Set-ControlTextValue $programBindingScriptBox $(if ($binding -and -not [string]::IsNullOrWhiteSpace([string]$binding.Target)) { [string]$binding.Target } else { 'NO SCRIPT SELECTED' })
-        Set-ControlTextValue $programBindingShortcutBox $(if ($binding -and -not [string]::IsNullOrWhiteSpace([string]$binding.Shortcut)) { [string]$binding.Shortcut } else { 'NO SHORTCUT' })
+        Set-ControlTextValue $programBindingShortcutBox $(if ($binding -and -not [string]::IsNullOrWhiteSpace([string]$binding.Shortcut)) { Format-ShortcutForDisplay -Shortcut ([string]$binding.Shortcut) } else { 'NO SHORTCUT' })
     }
     $syncFirstStepToProgram = {
         param([string]$programLabel)
@@ -7525,7 +7821,7 @@ function Edit-RecordedMacro {
         Restart-Backend
         Refresh-Ui
         & $refreshBindingShortcutDisplay $macroId
-        Set-ShortcutStatus ('Bound ' + (& $getCurrentSelectedMacroLabel) + ' to ' + $shortcut + '.')
+        Set-ShortcutStatus ('Bound ' + (& $getCurrentSelectedMacroLabel) + ' to ' + (Format-ShortcutForDisplay -Shortcut $shortcut) + '.')
         $script:__lastAppliedBindingShortcut = $shortcut
         & $updateActiveShortcutDisplay $shortcut
         Write-UiLog ('Macro binding saved. MacroId=' + [string]$macroId + ' | Shortcut=' + [string]$shortcut)
@@ -7679,6 +7975,7 @@ function Edit-RecordedMacro {
         )
 
         if ($programTabId -le 0) { throw 'Select a program tab first.' }
+        $shortcutValue = Get-CanonicalShortcut -Value $shortcutValue
 
         $existingBinding = & $getProgramTabBinding $programTabId
         if ([string]::IsNullOrWhiteSpace($scriptTarget) -and [string]::IsNullOrWhiteSpace($shortcutValue)) {
@@ -7814,7 +8111,7 @@ function Edit-RecordedMacro {
             }
 
             & $saveProgramTabBinding ([int]$currentProgramTab.Id) $currentScriptTarget $selectedShortcut
-            Set-ShortcutStatus ('Bound ' + [string]$currentProgramTab.Label + ' script to ' + $selectedShortcut + '.')
+            Set-ShortcutStatus ('Bound ' + [string]$currentProgramTab.Label + ' script to ' + (Format-ShortcutForDisplay -Shortcut $selectedShortcut) + '.')
         }
         catch {
             Write-UiLog ('Program shortcut binding failed: ' + $_.Exception.ToString())
@@ -8934,6 +9231,181 @@ function Add-FlowCellProgramTab([string]$ProgramName, [string]$ExePath) {
     }
 }
 
+function Rename-FlowCellProgramTab([int]$ProgramTabId, [string]$NewLabel) {
+    $trimmedLabel = [string]$NewLabel
+    if ([string]::IsNullOrWhiteSpace($trimmedLabel)) { return $false }
+
+    $programTab = Get-FlowCellProgramTab -ProgramTabId $ProgramTabId
+    if ($null -eq $programTab) { return $false }
+
+    $programTab.Label = $trimmedLabel.Trim()
+    Save-State
+    Save-FlowCellState
+    Write-UiLog ('Renamed FlowCell program tab. ProgramTabId={0}; Label={1}' -f [int]$ProgramTabId, [string]$programTab.Label)
+    return $true
+}
+
+function Remove-FlowCellProgramTab([int]$ProgramTabId) {
+    $programTab = Get-FlowCellProgramTab -ProgramTabId $ProgramTabId
+    if ($null -eq $programTab) {
+        return [pscustomobject]@{
+            Succeeded = $false
+            Message = 'Program tab not found.'
+        }
+    }
+    if (@($script:State.ProgramTabs).Count -le 1) {
+        return [pscustomobject]@{
+            Succeeded = $false
+            Message = 'FlowCell needs at least one program tab.'
+        }
+    }
+
+    $programState = Get-FlowCellProgramState -ProgramTabId $ProgramTabId
+    $remainingProgramTabs = @($script:State.ProgramTabs | Where-Object { [int]$_.Id -ne $ProgramTabId })
+    $fallbackProgramTabId = if (@($remainingProgramTabs).Count -gt 0) { [int]$remainingProgramTabs[0].Id } else { 0 }
+    $removedMacroTargets = @()
+    if ($programState) {
+        $removedMacroTargets = @(
+            foreach ($panel in @($programState.Panels)) {
+                foreach ($button in @($panel.Buttons)) {
+                    if ([string]$button.Kind -eq 'macro' -and -not [string]::IsNullOrWhiteSpace([string]$button.Target)) {
+                        [string]$button.Target
+                    }
+                }
+            }
+        ) | Select-Object -Unique
+    }
+
+    if ($script:FlowCellPanelWindows -is [hashtable]) {
+        foreach ($entry in @($script:FlowCellPanelWindows.GetEnumerator())) {
+            if ($null -eq $entry.Value) { continue }
+            if (-not $entry.Value.PSObject.Properties['ProgramTabId']) { continue }
+            if ([int]$entry.Value.ProgramTabId -ne $ProgramTabId) { continue }
+            if ($entry.Value.PSObject.Properties['Window'] -and $entry.Value.Window -and $entry.Value.Window.IsLoaded) {
+                $entry.Value.Window.Tag = 'shutdown'
+                try { $entry.Value.Window.Close() } catch {}
+            }
+            else {
+                [void]$script:FlowCellPanelWindows.Remove([string]$entry.Key)
+            }
+        }
+    }
+    if ($script:FlowCellToolPopoutWindows -is [hashtable]) {
+        foreach ($entry in @($script:FlowCellToolPopoutWindows.GetEnumerator())) {
+            if ($null -eq $entry.Value) { continue }
+            if (-not $entry.Value.PSObject.Properties['ProgramTabId']) { continue }
+            if ([int]$entry.Value.ProgramTabId -ne $ProgramTabId) { continue }
+            if ($entry.Value.PSObject.Properties['Window'] -and $entry.Value.Window -and $entry.Value.Window.IsLoaded) {
+                $entry.Value.Window.Tag = 'shutdown'
+                try { $entry.Value.Window.Close() } catch {}
+            }
+            else {
+                [void]$script:FlowCellToolPopoutWindows.Remove([string]$entry.Key)
+            }
+        }
+    }
+    if ($script:FlowCellToolPopoutTargets -is [hashtable]) {
+        foreach ($key in @($script:FlowCellToolPopoutTargets.Keys)) {
+            $targetEntry = $script:FlowCellToolPopoutTargets[$key]
+            $removeTargetEntry = $false
+            if ($targetEntry -and $targetEntry.PSObject.Properties['ProgramTabId']) {
+                $removeTargetEntry = ([int]$targetEntry.ProgramTabId -eq $ProgramTabId)
+            }
+            elseif ([string]$key -like ('{0}|*' -f $ProgramTabId)) {
+                $removeTargetEntry = $true
+            }
+            if ($removeTargetEntry) {
+                [void]$script:FlowCellToolPopoutTargets.Remove([string]$key)
+            }
+        }
+    }
+
+    $script:State.ProgramTabs = @($remainingProgramTabs)
+    $script:FlowCellState.Programs = @($script:FlowCellState.Programs | Where-Object { [int]$_.ProgramTabId -ne $ProgramTabId })
+    $script:State.ScriptBindings = @(
+        $script:State.ScriptBindings |
+            Where-Object { [int]$(if ($_.PSObject.Properties['ProgramTabId']) { $_.ProgramTabId } else { 0 }) -ne $ProgramTabId }
+    )
+    if ($script:FlowCellState.PSObject.Properties['ToolPopouts']) {
+        $script:FlowCellState.ToolPopouts = @(
+            $script:FlowCellState.ToolPopouts |
+                Where-Object { [int]$_.ProgramTabId -ne $ProgramTabId }
+        )
+    }
+    if ($script:FlowCellState.PSObject.Properties['PopoutClusters']) {
+        $programPopoutPrefixes = @(
+            'panel|{0}|' -f $ProgramTabId,
+            'tool|{0}|' -f $ProgramTabId
+        )
+        $script:FlowCellState.PopoutClusters = @(
+            foreach ($clusterState in @($script:FlowCellState.PopoutClusters)) {
+                $convertedCluster = ConvertTo-FlowCellPopoutClusterState $clusterState
+                if ($null -eq $convertedCluster) { continue }
+                $remainingMemberIds = @(
+                    foreach ($memberId in @($convertedCluster.MemberIds)) {
+                        $memberIdText = [string]$memberId
+                        $belongsToProgram = $false
+                        foreach ($prefix in @($programPopoutPrefixes)) {
+                            if ($memberIdText.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                                $belongsToProgram = $true
+                                break
+                            }
+                        }
+                        if (-not $belongsToProgram) {
+                            $memberIdText
+                        }
+                    }
+                )
+                if (@($remainingMemberIds).Count -lt 2) { continue }
+                [pscustomobject]@{
+                    Id = [string]$convertedCluster.Id
+                    MemberIds = @($remainingMemberIds)
+                    GrabberOffset = $convertedCluster.GrabberOffset
+                }
+            }
+        )
+    }
+
+    if ([int]$script:State.SelectedProgramTabId -eq $ProgramTabId) {
+        $script:State.SelectedProgramTabId = $fallbackProgramTabId
+    }
+    if ([int]$script:FlowCellState.SelectedProgramTabId -eq $ProgramTabId) {
+        $script:FlowCellState.SelectedProgramTabId = $fallbackProgramTabId
+    }
+
+    if (@($removedMacroTargets).Count -gt 0) {
+        $remainingMacroTargets = @(
+            foreach ($remainingProgramState in @($script:FlowCellState.Programs)) {
+                foreach ($remainingPanel in @($remainingProgramState.Panels)) {
+                    foreach ($remainingButton in @($remainingPanel.Buttons)) {
+                        if ([string]$remainingButton.Kind -eq 'macro' -and -not [string]::IsNullOrWhiteSpace([string]$remainingButton.Target)) {
+                            [string]$remainingButton.Target
+                        }
+                    }
+                }
+            }
+        ) | Select-Object -Unique
+        foreach ($removedMacroTarget in @($removedMacroTargets)) {
+            if (-not ($remainingMacroTargets -contains [string]$removedMacroTarget) -and $script:State.ActionHotkeys.Contains([string]$removedMacroTarget)) {
+                $script:State.ActionHotkeys.Remove([string]$removedMacroTarget)
+            }
+        }
+    }
+
+    Invoke-FlowCellClusterSafe 'remove-program-tab' { Restore-FlowCellPopoutClusters } | Out-Null
+    Save-State
+    Save-FlowCellState
+    if ($script:FlowCellWindow -and $script:FlowCellWindow.IsLoaded) {
+        Save-FlowCellLayoutSnapshot -MainWindow $script:FlowCellWindow | Out-Null
+    }
+    Restart-Backend
+    Write-UiLog ('Removed FlowCell program tab. ProgramTabId={0}; Label={1}' -f [int]$ProgramTabId, [string]$programTab.Label)
+    return [pscustomobject]@{
+        Succeeded = $true
+        Message = ('Deleted program tab: {0}' -f [string]$programTab.Label)
+    }
+}
+
 function Show-AddProgramDialog {
     $xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -9248,6 +9720,11 @@ function Test-FlowCellFlattenRevolveToolButton($Button) {
     $target = [string]$Button.Target
     if ([string]::IsNullOrWhiteSpace($target)) { return $false }
     return ([System.IO.Path]::GetFileName($target) -ieq 'util_flatten_revolve_tools.ps1')
+}
+
+function Test-FlowCellMultiButtonToolButton($Button) {
+    if ($null -eq $Button) { return $false }
+    return ((Test-FlowCellAlignmentToolButton $Button) -or (Test-FlowCellFlattenRevolveToolButton $Button))
 }
 
 function Get-FlowCellBlenderConfig {
@@ -10158,7 +10635,8 @@ function Get-FlowCellBindRows([int]$ProgramTabId) {
             BindingId = [int]$binding.Id
             Target = [string]$binding.Target
             Kind = 'script'
-            Shortcut = [string]$binding.Shortcut
+            Shortcut = Format-ShortcutForDisplay -Shortcut ([string]$binding.Shortcut)
+            RawShortcut = [string]$binding.Shortcut
             Action = [System.IO.Path]::GetFileNameWithoutExtension([string]$binding.Target)
             Type = 'script'
             Panel = 'Shortcut'
@@ -10175,7 +10653,8 @@ function Get-FlowCellBindRows([int]$ProgramTabId) {
             BindingId = 0
             Target = $actionId
             Kind = 'macro'
-            Shortcut = [string]$script:State.ActionHotkeys[$actionId]
+            Shortcut = Format-ShortcutForDisplay -Shortcut ([string]$script:State.ActionHotkeys[$actionId])
+            RawShortcut = [string]$script:State.ActionHotkeys[$actionId]
             Action = [string]$action.Label
             Type = 'macro'
             Panel = 'Shortcut'
@@ -10459,19 +10938,17 @@ function Show-FlowCellButtonPopoutWindow {
         [string]$PanelId,
         [Parameter(Mandatory = $true)]
         [object[]]$Entries,
-        [ValidateSet('Vertical', 'Horizontal', 'Individual')]
-        [string]$LayoutMode = 'Vertical',
+        [ValidateSet('Group', 'Individual')]
+        [string]$LayoutMode = 'Group',
         [scriptblock]$OnStateChanged = $null
     )
 
     $resolvedEntries = @($Entries | Where-Object { $null -ne $_ -and $_.PSObject.Properties['Button'] -and $null -ne $_.Button })
     if (@($resolvedEntries).Count -eq 0) { return }
-    $resolvedLayoutMode = switch ([string]$LayoutMode) {
-        'Horizontal' { 'Horizontal' }
-        'Individual' { 'Individual' }
-        default { 'Vertical' }
+    $resolvedLayoutMode = Get-FlowCellNormalizedToolPopoutLayoutMode -LayoutMode $LayoutMode
+    if ([string]$resolvedLayoutMode -eq 'Individual' -and @($resolvedEntries).Count -gt 1) {
+        $resolvedLayoutMode = 'Group'
     }
-    $isSingleIndividualPopout = ([string]$resolvedLayoutMode -eq 'Individual' -and @($resolvedEntries).Count -eq 1)
     $stateButtonIds = @($resolvedEntries | ForEach-Object { [string]$_.Button.Id })
     $targetKeys = @(
         foreach ($entry in @($resolvedEntries)) {
@@ -10527,9 +11004,7 @@ function Show-FlowCellButtonPopoutWindow {
         Foreground="#FFF2F2F2">
     <Border Margin="0" Padding="0" Background="#FF171B22" CornerRadius="0">
         <Grid>
-            <Viewbox x:Name="ToolViewbox" Stretch="Uniform" StretchDirection="Both">
-                <ContentControl x:Name="ToolHost" Margin="0" />
-            </Viewbox>
+            <ContentControl x:Name="ToolHost" Margin="0" />
             <Button x:Name="ToolMoveGrabber"
                     Width="14"
                     Height="14"
@@ -10612,29 +11087,92 @@ function Show-FlowCellButtonPopoutWindow {
 
     $refreshWindow = {
         $buttonScale = Get-FlowCellButtonScale
-        $buttonWidth = [Math]::Round(164 * $buttonScale, 2)
-        $buttonHeight = [Math]::Round(56 * $buttonScale, 2)
-        $buttonPadding = ('{0},{1}' -f [Math]::Max([int][Math]::Round(6 * $buttonScale), 1), [Math]::Max([int][Math]::Round(4 * $buttonScale), 1))
-        $buttonFontSize = [Math]::Max([double][Math]::Round(14 * $buttonScale, 1), 8)
-        $container = if ([string]$resolvedLayoutMode -eq 'Horizontal') {
-            $wrap = New-Object System.Windows.Controls.WrapPanel
-            $wrap.Orientation = 'Horizontal'
-            $wrap
-        }
-        else {
-            $stack = New-Object System.Windows.Controls.StackPanel
-            $stack.Orientation = 'Vertical'
-            $stack
-        }
-        $container.Margin = '0'
+        $availableWidth = [Math]::Max($(if ([double]$window.ActualWidth -gt 0) { [double]$window.ActualWidth } else { [double]$window.Width }), 120.0)
+        $availableHeight = [Math]::Max($(if ([double]$window.ActualHeight -gt 0) { [double]$window.ActualHeight } else { [double]$window.Height }), 70.0)
 
+        if ([string]$resolvedLayoutMode -eq 'Group') {
+            $container = New-Object System.Windows.Controls.UniformGrid
+            $container.Margin = '0'
+
+            $buttonCount = [Math]::Max(@($resolvedEntries).Count, 1)
+            $targetAspect = 164.0 / 56.0
+            $bestColumns = 1
+            $bestRows = $buttonCount
+            $bestScore = [double]::PositiveInfinity
+            for ($candidateColumns = 1; $candidateColumns -le $buttonCount; $candidateColumns++) {
+                $candidateRows = [int][Math]::Ceiling($buttonCount / [double]$candidateColumns)
+                $cellWidth = $availableWidth / [double]$candidateColumns
+                $cellHeight = $availableHeight / [double]$candidateRows
+                $aspectScore = [Math]::Abs(($cellWidth / [Math]::Max($cellHeight, 1.0)) - $targetAspect)
+                $rowPenalty = [Math]::Abs($candidateRows - [Math]::Max([Math]::Round($availableHeight / 70.0), 1.0)) * 0.08
+                $score = $aspectScore + $rowPenalty
+                if ($score -lt $bestScore) {
+                    $bestScore = $score
+                    $bestColumns = $candidateColumns
+                    $bestRows = $candidateRows
+                }
+            }
+            if ($container.PSObject.Properties['Columns']) { $container.Columns = [int]$bestColumns }
+            if ($container.PSObject.Properties['Rows']) { $container.Rows = [int]$bestRows }
+
+            $cellWidthForFont = $availableWidth / [double][Math]::Max($bestColumns, 1)
+            $cellHeightForFont = $availableHeight / [double][Math]::Max($bestRows, 1)
+            $paddingX = [Math]::Max([int][Math]::Round([Math]::Min(6 * $buttonScale, $cellHeightForFont * 0.08)), 0)
+            $paddingY = [Math]::Max([int][Math]::Round([Math]::Min(4 * $buttonScale, $cellHeightForFont * 0.05)), 0)
+            $buttonPadding = ('{0},{1}' -f $paddingX, $paddingY)
+            $buttonFontSize = [Math]::Max([double][Math]::Min([Math]::Round([Math]::Min($cellHeightForFont * 0.42, $cellWidthForFont * 0.12), 1), 28.0), 5.0)
+
+            foreach ($entry in @($resolvedEntries)) {
+                $button = $entry.Button
+                $buttonControl = New-Object System.Windows.Controls.Button
+                $buttonControl.Width = [double]::NaN
+                $buttonControl.Height = [double]::NaN
+                $buttonControl.Margin = '0'
+                $buttonControl.Padding = $buttonPadding
+                $buttonControl.FontSize = $buttonFontSize
+                $buttonControl.HorizontalAlignment = 'Stretch'
+                $buttonControl.VerticalAlignment = 'Stretch'
+                $buttonControl.HorizontalContentAlignment = 'Center'
+                $buttonControl.VerticalContentAlignment = 'Center'
+                $buttonControl.Background = (New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(45,51,61)))
+                $buttonControl.BorderBrush = (New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(116,196,255)))
+                $buttonControl.BorderThickness = '1'
+                $buttonControl.Foreground = [System.Windows.Media.Brushes]::White
+                $buttonControl.Content = [string]$button.Label
+                $buttonControl.ToolTip = Resolve-FlowCellButtonTooltip -Button $button -ProgramTab $entry.ProgramTab
+                $buttonControl.Tag = [pscustomobject]@{
+                    Button = $button
+                    ProgramTab = if ($entry.PSObject.Properties['ProgramTab'] -and $entry.ProgramTab) { $entry.ProgramTab } else { $programTab }
+                    PanelId = [string]$entry.PanelId
+                }
+                $buttonControl.Add_Click({
+                    param($sender, $eventArgs)
+                    $tag = $sender.Tag
+                    $result = Invoke-FlowCellButtonAction -Button $tag.Button -ProgramTab $tag.ProgramTab
+                    if (-not $result.Succeeded) {
+                        Set-ActionStatus ([string]$result.Message)
+                    }
+                }.GetNewClosure())
+                [void]$container.Children.Add($buttonControl)
+            }
+
+            $toolHost.Content = $container
+            $window.MinWidth = 80.0
+            $window.MinHeight = 24.0
+            if (-not [bool]$windowEntry.InitializedSize) {
+                $windowEntry.InitializedSize = $true
+            }
+            return
+        }
+
+        $container = New-Object System.Windows.Controls.Grid
+        $container.Margin = '0'
         foreach ($entry in @($resolvedEntries)) {
             $button = $entry.Button
-            $itemMargin = if ($isSingleIndividualPopout) { '0' } else { '0,0,8,8' }
             if (Test-FlowCellAlignmentToolButton $button) {
                 try {
                     $alignmentControl = New-FlowCellAlignmentToolControl -Button $button -Width 260 -FontSize ([Math]::Max([double][Math]::Round(12 * $buttonScale, 1), 8))
-                    $alignmentControl.Margin = $itemMargin
+                    $alignmentControl.Margin = '0'
                     [void]$container.Children.Add($alignmentControl)
                     continue
                 }
@@ -10645,7 +11183,7 @@ function Show-FlowCellButtonPopoutWindow {
             if (Test-FlowCellFlattenRevolveToolButton $button) {
                 try {
                     $flattenRevolveControl = New-FlowCellFlattenRevolveToolControl -Button $button -Width 290 -FontSize ([Math]::Max([double][Math]::Round(12 * $buttonScale, 1), 8))
-                    $flattenRevolveControl.Margin = $itemMargin
+                    $flattenRevolveControl.Margin = '0'
                     [void]$container.Children.Add($flattenRevolveControl)
                     continue
                 }
@@ -10654,12 +11192,18 @@ function Show-FlowCellButtonPopoutWindow {
                 }
             }
 
+            $buttonPadding = ('{0},{1}' -f [Math]::Max([int][Math]::Round(6 * $buttonScale), 1), [Math]::Max([int][Math]::Round(4 * $buttonScale), 1))
+            $buttonFontSize = [Math]::Max([double][Math]::Round(14 * $buttonScale, 1), 8)
             $buttonControl = New-Object System.Windows.Controls.Button
-            $buttonControl.Width = $buttonWidth
-            $buttonControl.Height = $buttonHeight
-            $buttonControl.Margin = $itemMargin
+            $buttonControl.Width = [double]::NaN
+            $buttonControl.Height = [double]::NaN
+            $buttonControl.Margin = '0'
             $buttonControl.Padding = $buttonPadding
             $buttonControl.FontSize = $buttonFontSize
+            $buttonControl.HorizontalAlignment = 'Stretch'
+            $buttonControl.VerticalAlignment = 'Stretch'
+            $buttonControl.HorizontalContentAlignment = 'Center'
+            $buttonControl.VerticalContentAlignment = 'Center'
             $buttonControl.Background = (New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(45,51,61)))
             $buttonControl.BorderBrush = (New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(116,196,255)))
             $buttonControl.BorderThickness = '1'
@@ -10681,6 +11225,7 @@ function Show-FlowCellButtonPopoutWindow {
             }.GetNewClosure())
             [void]$container.Children.Add($buttonControl)
         }
+
         $toolHost.Content = $container
         $container.Measure((New-Object System.Windows.Size([double]::PositiveInfinity, [double]::PositiveInfinity)))
         $desiredSize = $container.DesiredSize
@@ -10709,7 +11254,15 @@ function Show-FlowCellButtonPopoutWindow {
         }
     }.GetNewClosure())
     $window.Add_SizeChanged({
-        Save-FlowCellToolPopoutWindowBounds -Window $window -ProgramTabId $ProgramTabId -PanelId $PanelId -ButtonIds $stateButtonIds -LayoutMode $resolvedLayoutMode
+        try {
+            Save-FlowCellToolPopoutWindowBounds -Window $window -ProgramTabId $ProgramTabId -PanelId $PanelId -ButtonIds $stateButtonIds -LayoutMode $resolvedLayoutMode
+            if ($windowEntry.Refresh -is [scriptblock]) {
+                & $windowEntry.Refresh
+            }
+        }
+        catch {
+            Write-UiLog ('FlowCell tool popout resize handler failed. ProgramTabId={0}; PanelId={1}; Error={2}' -f $ProgramTabId, [string]$PanelId, $_.Exception.ToString())
+        }
     }.GetNewClosure())
     $ownerSyncTimer.Add_Tick({
         if (-not $window.IsLoaded -or [string]$window.Tag -eq 'closing' -or [string]$window.Tag -eq 'shutdown') {
@@ -10786,49 +11339,119 @@ function Show-FlowCellButtonPopoutSelection {
         [string]$PanelId,
         [Parameter(Mandatory = $true)]
         [object[]]$Entries,
-        [ValidateSet('Vertical', 'Horizontal', 'Individual')]
-        [string]$LayoutMode = 'Vertical',
+        [ValidateSet('Group', 'Individual')]
+        [string]$LayoutMode = 'Group',
         [scriptblock]$OnStateChanged = $null
     )
 
+    $resolvedEntries = @($Entries | Where-Object { $null -ne $_ -and $_.PSObject.Properties['Button'] -and $null -ne $_.Button })
+    if (@($resolvedEntries).Count -eq 0) {
+        Clear-FlowCellButtonSelection -ProgramTabId $ProgramTabId -PanelId $PanelId
+        Invoke-FlowCellMainRefresh
+        Invoke-FlowCellMainRefreshAsync
+        if ($OnStateChanged -is [scriptblock]) { & $OnStateChanged }
+        return
+    }
+
     $openedEntries = @()
     $openedEntryIds = New-Object System.Collections.Generic.HashSet[string]
-    foreach ($entry in @($Entries)) {
-        if ($null -eq $entry -or -not $entry.PSObject.Properties['Button'] -or $null -eq $entry.Button) { continue }
-        $entryProgramTabId = if ($entry.PSObject.Properties['ProgramTabId']) {
-            [int]$entry.ProgramTabId
-        }
-        elseif ($entry.PSObject.Properties['ProgramTab'] -and $entry.ProgramTab -and $entry.ProgramTab.PSObject.Properties['Id']) {
-            [int]$entry.ProgramTab.Id
+    $addOpenedEntry = {
+        param($Entry)
+        if ($null -eq $Entry) { return }
+        $entryId = if ($Entry.PSObject.Properties['PopoutId'] -and -not [string]::IsNullOrWhiteSpace([string]$Entry.PopoutId)) {
+            [string]$Entry.PopoutId
         }
         else {
-            [int]$ProgramTabId
+            [string]$Entry.Window.Title
         }
-        $targetKey = Get-FlowCellButtonPopoutTargetKey -ProgramTabId $entryProgramTabId -PanelId ([string]$entry.PanelId) -ButtonId ([string]$entry.Button.Id)
-        $existingLiveEntry = Get-FlowCellExistingToolPopoutEntryForTarget -TargetKey $targetKey
-        if ($existingLiveEntry) {
-            if ($existingLiveEntry.Refresh -is [scriptblock]) { & $existingLiveEntry.Refresh }
-            if ($existingLiveEntry.PSObject.Properties['PopoutId']) {
-                [void](Bring-FlowCellPopoutClusterToFrontByPopoutId -PopoutId ([string]$existingLiveEntry.PopoutId))
-                if (-not $openedEntryIds.Contains([string]$existingLiveEntry.PopoutId)) {
-                    [void]$openedEntryIds.Add([string]$existingLiveEntry.PopoutId)
-                    $openedEntries += $existingLiveEntry
+        if ($openedEntryIds.Add($entryId)) {
+            $openedEntries += $Entry
+        }
+    }.GetNewClosure()
+    $showEntryFront = {
+        param($Entry)
+        if ($null -eq $Entry) { return }
+        if ($Entry.Refresh -is [scriptblock]) { & $Entry.Refresh }
+        if (-not ($Entry.PSObject.Properties['PopoutId'] -and (Bring-FlowCellPopoutClusterToFrontByPopoutId -PopoutId ([string]$Entry.PopoutId)))) {
+            Show-FlowCellWindowFront -Window $Entry.Window
+        }
+    }.GetNewClosure()
+    $openOrReuseSelection = {
+        param(
+            [object[]]$DesiredEntries,
+            [string]$DesiredLayoutMode
+        )
+
+        $resolvedDesiredEntries = @($DesiredEntries | Where-Object { $null -ne $_ -and $_.PSObject.Properties['Button'] -and $null -ne $_.Button })
+        if (@($resolvedDesiredEntries).Count -eq 0) { return $null }
+
+        $stateButtonIds = @($resolvedDesiredEntries | ForEach-Object { [string]$_.Button.Id })
+        $targetKeys = @(
+            foreach ($desiredEntry in @($resolvedDesiredEntries)) {
+                $entryProgramTabId = if ($desiredEntry.PSObject.Properties['ProgramTabId']) {
+                    [int]$desiredEntry.ProgramTabId
                 }
+                elseif ($desiredEntry.PSObject.Properties['ProgramTab'] -and $desiredEntry.ProgramTab -and $desiredEntry.ProgramTab.PSObject.Properties['Id']) {
+                    [int]$desiredEntry.ProgramTab.Id
+                }
+                else {
+                    [int]$ProgramTabId
+                }
+                Get-FlowCellButtonPopoutTargetKey -ProgramTabId $entryProgramTabId -PanelId ([string]$desiredEntry.PanelId) -ButtonId ([string]$desiredEntry.Button.Id)
             }
-            continue
+        )
+        $existingEntries = @(Get-FlowCellLiveToolPopoutEntriesForTargetKeys -TargetKeys $targetKeys)
+        $matchingEntry = @(
+            $existingEntries |
+                Where-Object {
+                    Test-FlowCellToolPopoutEntryMatchesSpec -Entry $_ -ProgramTabId $ProgramTabId -PanelId $PanelId -ButtonIds $stateButtonIds -LayoutMode $DesiredLayoutMode
+                } |
+                Select-Object -First 1
+        )
+        if (@($matchingEntry).Count -gt 0) {
+            $matchingEntry = $matchingEntry[0]
+            & $showEntryFront $matchingEntry
+            return $matchingEntry
         }
 
-        Show-FlowCellButtonPopoutWindow -ProgramTabId $ProgramTabId -PanelId $PanelId -Entries @($entry) -LayoutMode 'Individual' -OnStateChanged $OnStateChanged
-        $popoutId = Get-FlowCellToolButtonPopoutId -ProgramTabId $entryProgramTabId -PanelId ([string]$entry.PanelId) -ButtonId ([string]$entry.Button.Id)
-        $liveEntry = Invoke-FlowCellClusterSafe 'tool-selection:get-live-entry' { Get-FlowCellPopoutWindowEntryById -PopoutId $popoutId }
-        if ($liveEntry -and -not $openedEntryIds.Contains([string]$liveEntry.PopoutId)) {
-            [void]$openedEntryIds.Add([string]$liveEntry.PopoutId)
-            $openedEntries += $liveEntry
+        foreach ($existingEntry in @($existingEntries)) {
+            Close-FlowCellToolPopoutEntry -Entry $existingEntry
+        }
+
+        Show-FlowCellButtonPopoutWindow -ProgramTabId $ProgramTabId -PanelId $PanelId -Entries $resolvedDesiredEntries -LayoutMode $DesiredLayoutMode -OnStateChanged $OnStateChanged
+        return @(
+            Get-FlowCellLiveToolPopoutEntriesForTargetKeys -TargetKeys $targetKeys |
+                Where-Object {
+                    Test-FlowCellToolPopoutEntryMatchesSpec -Entry $_ -ProgramTabId $ProgramTabId -PanelId $PanelId -ButtonIds $stateButtonIds -LayoutMode $DesiredLayoutMode
+                } |
+                Select-Object -First 1
+        )[0]
+    }.GetNewClosure()
+
+    $chunkEntries = @()
+    $individualEntries = @()
+    foreach ($entry in @($resolvedEntries)) {
+        if (Test-FlowCellMultiButtonToolButton $entry.Button) {
+            $individualEntries += $entry
+        }
+        else {
+            $chunkEntries += $entry
         }
     }
 
-    if (@($openedEntries).Count -gt 1 -and [string]$LayoutMode -in @('Vertical', 'Horizontal')) {
-        Invoke-FlowCellClusterSafe 'tool-selection:connect-layout' { Connect-FlowCellPopoutEntriesInLayout -Entries $openedEntries -LayoutMode ([string]$LayoutMode) } | Out-Null
+    if ([string]$LayoutMode -eq 'Individual') {
+        $individualEntries = @($individualEntries + $chunkEntries)
+        $chunkEntries = @()
+    }
+
+    if (@($chunkEntries).Count -gt 0) {
+        $chunkEntry = & $openOrReuseSelection -DesiredEntries $chunkEntries -DesiredLayoutMode $LayoutMode
+        & $addOpenedEntry $chunkEntry
+    }
+
+    foreach ($entry in @($individualEntries)) {
+        $individualEntry = & $openOrReuseSelection -DesiredEntries @($entry) -DesiredLayoutMode 'Individual'
+        & $addOpenedEntry $individualEntry
     }
     Clear-FlowCellButtonSelection -ProgramTabId $ProgramTabId -PanelId $PanelId
     Invoke-FlowCellMainRefresh
@@ -11499,6 +12122,11 @@ function Start-Ui {
                             <Slider x:Name="ButtonSizeSlider" Width="180" Minimum="0.2" Maximum="1.0" Value="1.0" TickFrequency="0.1" IsSnapToTickEnabled="False" SmallChange="0.05" LargeChange="0.1" />
                             <TextBlock x:Name="ButtonSizeValueText" Width="48" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="#FFEAF7FF">1.00x</TextBlock>
                         </WrapPanel>
+                        <CheckBox x:Name="StartupRestorePopoutsOnlyCheckBox"
+                                  Margin="0,12,0,0"
+                                  Foreground="#FFEAF7FF"
+                                  IsChecked="True"
+                                  Content="Start minimized and reopen the last pop-out-only layout" />
                     </StackPanel>
                     <Border Grid.Column="1" Background="#FF1D222A" BorderBrush="#FF3C4654" BorderThickness="1" CornerRadius="12" Padding="12" MinWidth="420">
                         <StackPanel>
@@ -11600,7 +12228,12 @@ function Start-Ui {
     $panelButtonGrid = $flowWindow.FindName('PanelButtonGrid')
     $buttonSizeSlider = $flowWindow.FindName('ButtonSizeSlider')
     $buttonSizeValueText = $flowWindow.FindName('ButtonSizeValueText')
+    $startupRestorePopoutsOnlyCheckBox = $flowWindow.FindName('StartupRestorePopoutsOnlyCheckBox')
     $shortcutDropdown = $flowWindow.FindName('ShortcutDropdown')
+    if ($shortcutDropdown) {
+        $shortcutDropdown.DisplayMemberPath = 'Display'
+        $shortcutDropdown.SelectedValuePath = 'RawShortcut'
+    }
     $selectedBindNameText = $flowWindow.FindName('SelectedBindNameText')
     $applyBindButton = $flowWindow.FindName('ApplyBindButton')
     $bindSelectionText = $flowWindow.FindName('BindSelectionText')
@@ -11622,12 +12255,17 @@ function Start-Ui {
     $loadPanelButton = $flowWindow.FindName('LoadPanelButton')
     $script:__flowCellSuppressProgramSelection = $false
     $script:__flowCellSuppressPanelSelection = $false
+    $script:FlowCellPopoutFirstStartupPending = Test-FlowCellStartupRestorePopoutsOnlyEnabled
+    if ($startupRestorePopoutsOnlyCheckBox) {
+        $startupRestorePopoutsOnlyCheckBox.IsChecked = [bool](Test-FlowCellStartupRestorePopoutsOnlyEnabled)
+        $startupRestorePopoutsOnlyCheckBox.ToolTip = 'When checked, FlowCell starts minimized and restores the last saved pop-out-only layout on launch.'
+    }
     if ($popOutModeBox) {
-        foreach ($mode in @('Vertical', 'Horizontal', 'Individual')) {
+        foreach ($mode in @('Group', 'Individual')) {
             [void]$popOutModeBox.Items.Add($mode)
         }
         $popOutModeBox.SelectedIndex = 0
-        $popOutModeBox.ToolTip = 'Choose how checked tools open when Pop Out is pressed.'
+        $popOutModeBox.ToolTip = 'Choose whether checked tools open together in one popout or one window per tool.'
     }
 
     $setStatus = { param([string]$Text) Set-ControlTextValue $flowCellStatusText $Text }
@@ -11706,12 +12344,68 @@ function Start-Ui {
         [void]$menu.Items.Add($deleteItem)
         $buttonControl.ContextMenu = $menu
     }
+    $showProgramTabContextMenu = {
+        param($programTab)
+        if ($null -eq $programTab) { return $null }
+
+        $menu = New-Object System.Windows.Controls.ContextMenu
+        $renameItem = New-Object System.Windows.Controls.MenuItem
+        $renameItem.Header = 'Rename Program'
+        $deleteItem = New-Object System.Windows.Controls.MenuItem
+        $deleteItem.Header = 'Delete Program'
+        $deleteItem.IsEnabled = (@($script:State.ProgramTabs).Count -gt 1)
+
+        $renameItem.Add_Click({
+            Invoke-UiSafe 'Rename program failed.' {
+                $newLabel = Show-TextEntryDialog -Title 'Rename Program' -Prompt 'Enter the new program name.' -InitialValue ([string]$programTab.Label) -AcceptText 'Rename' -OwnerWindow $flowWindow
+                if ([string]::IsNullOrWhiteSpace($newLabel)) { return }
+                if (Rename-FlowCellProgramTab -ProgramTabId ([int]$programTab.Id) -NewLabel $newLabel) {
+                    Clear-FlowCellButtonSelection
+                    & $refreshAll
+                    & $setStatus ('Renamed program tab to {0}.' -f [string]$newLabel.Trim())
+                }
+            }
+        }.GetNewClosure())
+        $deleteItem.Add_Click({
+            Invoke-UiSafe 'Delete program failed.' {
+                $confirmText = 'Delete program {0}? This removes its FlowCell panels, buttons, shortcuts, and popout state.' -f [string]$programTab.Label
+                if (-not (Confirm-UiAction -Message $confirmText -Title 'FlowCell' -OwnerWindow $flowWindow)) { return }
+                $result = Remove-FlowCellProgramTab -ProgramTabId ([int]$programTab.Id)
+                if (-not [bool]$result.Succeeded) {
+                    & $setStatus ([string]$result.Message)
+                    return
+                }
+                Clear-FlowCellButtonSelection
+                & $refreshAll
+                & $setStatus ([string]$result.Message)
+            }
+        }.GetNewClosure())
+
+        [void]$menu.Items.Add($renameItem)
+        [void]$menu.Items.Add($deleteItem)
+        return $menu
+    }
     $refreshShortcutDropdown = {
-        $current = ''
+        $current = if ($shortcutDropdown -and $shortcutDropdown.SelectedItem -and $shortcutDropdown.SelectedItem.PSObject.Properties['RawShortcut']) {
+            [string]$shortcutDropdown.SelectedItem.RawShortcut
+        }
+        else {
+            ''
+        }
+        $items = @(
+            New-ShortcutDisplayItem -RawShortcut ''
+            foreach ($candidate in @(Get-AvailableCandidateShortcuts -IncludeShortcut $current)) {
+                New-ShortcutDisplayItem -RawShortcut ([string]$candidate)
+            }
+        )
         $shortcutDropdown.Items.Clear()
-        [void]$shortcutDropdown.Items.Add('')
-        foreach ($candidate in @(Get-AvailableCandidateShortcuts -IncludeShortcut $current)) { [void]$shortcutDropdown.Items.Add([string]$candidate) }
-        if ($current -and ($shortcutDropdown.Items -contains $current)) { $shortcutDropdown.SelectedItem = $current } else { $shortcutDropdown.SelectedIndex = 0 }
+        foreach ($item in $items) { [void]$shortcutDropdown.Items.Add($item) }
+        $selectedItem = @($items | Where-Object { [string]$_.RawShortcut -eq $current } | Select-Object -First 1)
+        if (@($selectedItem).Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($current)) {
+            $normalizedCurrent = Normalize-Shortcut -Value $current
+            $selectedItem = @($items | Where-Object { (Normalize-Shortcut -Value ([string]$_.RawShortcut)) -eq $normalizedCurrent } | Select-Object -First 1)
+        }
+        if (@($selectedItem).Count -gt 0) { $shortcutDropdown.SelectedItem = $selectedItem[0] } else { $shortcutDropdown.SelectedIndex = 0 }
     }
     $updateButtonSizeDisplay = {
         $scale = Get-FlowCellButtonScale
@@ -11890,11 +12584,16 @@ function Start-Ui {
     $script:FlowCellMainRefresh = $refreshAll
     $completePendingBinding = {
         $pending = $script:FlowCellPendingShortcutBinding
-        $shortcut = if ($shortcutDropdown.SelectedItem) { [string]$shortcutDropdown.SelectedItem } else { '' }
+        $shortcut = if ($shortcutDropdown.SelectedItem -and $shortcutDropdown.SelectedItem.PSObject.Properties['RawShortcut']) {
+            [string]$shortcutDropdown.SelectedItem.RawShortcut
+        }
+        else {
+            ''
+        }
         if ($null -eq $pending -or [string]::IsNullOrWhiteSpace($shortcut)) { return }
         $normalizedShortcut = Normalize-Shortcut -Value $shortcut
         if ((Get-UsedShortcuts).ContainsKey($normalizedShortcut)) {
-            & $setStatus ('Shortcut already in use: {0}' -f $shortcut)
+            & $setStatus ('Shortcut already in use: {0}' -f (Format-ShortcutForDisplay -Shortcut $shortcut))
             Write-UiLog ('FlowCell bind rejected because shortcut is already in use: {0}' -f $shortcut)
             return
         }
@@ -11919,7 +12618,7 @@ function Start-Ui {
             & $clearPendingBinding
             & $refreshAll
             Write-UiLog ('FlowCell saved shortcut bind for script {0} to {1} in program {2}.' -f $pending.Label, $shortcut, $programTab.Label)
-            & $setStatus ('Saved script shortcut {0} for {1}.' -f $shortcut, $pending.Label)
+            & $setStatus ('Saved script shortcut {0} for {1}.' -f (Format-ShortcutForDisplay -Shortcut $shortcut), $pending.Label)
         }
         else {
             $script:State.ActionHotkeys[[string]$pending.Target] = $shortcut
@@ -11928,11 +12627,33 @@ function Start-Ui {
             & $clearPendingBinding
             & $refreshAll
             Write-UiLog ('FlowCell saved shortcut bind for macro {0} to {1}.' -f $pending.Label, $shortcut)
-            & $setStatus ('Saved macro shortcut {0} for {1}.' -f $shortcut, $pending.Label)
+            & $setStatus ('Saved macro shortcut {0} for {1}.' -f (Format-ShortcutForDisplay -Shortcut $shortcut), $pending.Label)
         }
     }
 
     $programTabStrip.Add_SelectionChanged({ if ($script:__flowCellSuppressProgramSelection) { return }; if ($programTabStrip.SelectedItem -and $programTabStrip.SelectedItem.PSObject.Properties['Id']) { Clear-FlowCellButtonSelection; $script:FlowCellState.SelectedProgramTabId = [int]$programTabStrip.SelectedItem.Id; Save-FlowCellState; & $refreshAll } })
+    $programTabStrip.Add_PreviewMouseRightButtonUp({
+        param($sender, $eventArgs)
+        try {
+            $dep = [System.Windows.DependencyObject]$eventArgs.OriginalSource
+            while ($dep -and -not ($dep -is [System.Windows.Controls.ListBoxItem])) {
+                $dep = [System.Windows.Media.VisualTreeHelper]::GetParent($dep)
+            }
+            if (-not $dep -or -not ($dep -is [System.Windows.Controls.ListBoxItem])) { return }
+            $clickedProgramTab = $dep.DataContext
+            if ($null -eq $clickedProgramTab -or -not $clickedProgramTab.PSObject.Properties['Id']) { return }
+            $programTabStrip.SelectedItem = $clickedProgramTab
+            $menu = & $showProgramTabContextMenu $clickedProgramTab
+            if ($menu) {
+                $menu.PlacementTarget = $dep
+                $menu.IsOpen = $true
+                $eventArgs.Handled = $true
+            }
+        }
+        catch {
+            Write-UiLog ('Program tab context menu failed: {0}' -f $_.Exception.ToString())
+        }
+    }.GetNewClosure())
     $panelTabStrip.Add_SelectionChanged({ if ($script:__flowCellSuppressPanelSelection) { return }; if ($panelTabStrip.SelectedItem -and $panelTabStrip.SelectedItem.PSObject.Properties['Id']) { $programState = Get-FlowCellSelectedProgramState; if ($programState) { Clear-FlowCellButtonSelection -ProgramTabId ([int]$programState.ProgramTabId) -PanelId ([string]$programState.SelectedPanelId); $programState.SelectedPanelId = [string]$panelTabStrip.SelectedItem.Id; Save-FlowCellState; & $refreshAll } } })
     if ($addProgramButton) {
         $addProgramButton.Add_Click({
@@ -11950,12 +12671,24 @@ function Start-Ui {
             }
         })
     }
+    if ($startupRestorePopoutsOnlyCheckBox) {
+        $startupRestorePopoutsOnlyCheckBox.Add_Click({
+            $isEnabled = [bool]$startupRestorePopoutsOnlyCheckBox.IsChecked
+            Set-FlowCellStartupRestorePopoutsOnly -Enabled $isEnabled
+            Save-FlowCellState
+            & $setStatus $(if ($isEnabled) {
+                'Startup pop-out-only mode is on. FlowCell will start minimized and restore the last pop-out layout next launch.'
+            } else {
+                'Startup pop-out-only mode is off. FlowCell will open the main window normally next launch.'
+            })
+        })
+    }
     $applyBindButton.Add_Click({
         if (-not $script:FlowCellPendingShortcutBinding) {
             & $setStatus 'Pick Script or Macro first.'
             return
         }
-        if (-not $shortcutDropdown.SelectedItem -or [string]::IsNullOrWhiteSpace([string]$shortcutDropdown.SelectedItem)) {
+        if (-not $shortcutDropdown.SelectedItem -or -not $shortcutDropdown.SelectedItem.PSObject.Properties['RawShortcut'] -or [string]::IsNullOrWhiteSpace([string]$shortcutDropdown.SelectedItem.RawShortcut)) {
             & $setStatus 'Choose a shortcut first, then click Bind.'
             return
         }
@@ -12281,21 +13014,27 @@ function Start-Ui {
     & $refreshAll
     & $setStatus 'FlowCell is ready. Choose a program tab, pick a panel, and add buttons with Bind Script or Bind Macro.'
     Write-UiLog 'FlowCell window loaded.'
-    $flowWindow.ShowActivated = $false
-    $flowWindow.WindowState = 'Minimized'
-    $flowWindow.Add_SourceInitialized({
-        try {
-            $startupRestoreAction = [System.Action]{
-                Restore-FlowCellPopoutFirstWorkspace -MainWindow $flowWindow -OnStateChanged $refreshAll
+    if (Test-FlowCellStartupRestorePopoutsOnlyEnabled) {
+        $flowWindow.ShowActivated = $false
+        $flowWindow.WindowState = 'Minimized'
+        $flowWindow.Add_SourceInitialized({
+            try {
+                $startupRestoreAction = [System.Action]{
+                    Restore-FlowCellPopoutFirstWorkspace -MainWindow $flowWindow -OnStateChanged $refreshAll
+                }
+                [void]$flowWindow.Dispatcher.BeginInvoke($startupRestoreAction, [System.Windows.Threading.DispatcherPriority]::ApplicationIdle)
             }
-            [void]$flowWindow.Dispatcher.BeginInvoke($startupRestoreAction, [System.Windows.Threading.DispatcherPriority]::ApplicationIdle)
-        }
-        catch {
-            Write-UiLog ('FlowCell failed to schedule popout-first startup restore: {0}' -f $_.Exception.ToString())
-            $script:FlowCellPopoutFirstStartupPending = $false
-            $script:FlowCellStartupRestoreInProgress = $false
-        }
-    }.GetNewClosure())
+            catch {
+                Write-UiLog ('FlowCell failed to schedule popout-first startup restore: {0}' -f $_.Exception.ToString())
+                $script:FlowCellPopoutFirstStartupPending = $false
+                $script:FlowCellStartupRestoreInProgress = $false
+            }
+        }.GetNewClosure())
+    }
+    else {
+        $flowWindow.ShowActivated = $true
+        $script:FlowCellPopoutFirstStartupPending = $false
+    }
     [void]$flowWindow.ShowDialog()
 }
 

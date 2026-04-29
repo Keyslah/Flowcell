@@ -38,9 +38,10 @@ function Get-WrapperFileName([string]$PanelName, [string]$Name) {
 
 function New-WrapperContent([string]$DispatcherPath, [string]$Action, [string]$Label, [string]$Direction) {
     $lines = @(
-        '$ErrorActionPreference = ''Stop'''
+        '$ErrorActionPreference = ''Stop''',
+        '$dispatcherPath = Join-Path $PSScriptRoot ''Invoke-BlenderFlowCellAction.ps1'''
     )
-    $command = "& '{0}' -Action '{1}' -Label '{2}'" -f ($DispatcherPath -replace "'", "''"), ($Action -replace "'", "''"), ($Label -replace "'", "''")
+    $command = "& $dispatcherPath -Action '{0}' -Label '{1}'" -f ($Action -replace "'", "''"), ($Label -replace "'", "''")
     if (-not [string]::IsNullOrWhiteSpace($Direction)) {
         $command += " -Direction '{0}'" -f ($Direction -replace "'", "''")
     }

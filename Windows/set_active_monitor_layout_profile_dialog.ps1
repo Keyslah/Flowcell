@@ -5,47 +5,21 @@ Add-Type -AssemblyName Microsoft.VisualBasic
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-function Get-PythonExecutablePath {
-    $pythonCandidates = @('py.exe', 'python.exe')
-
-    foreach ($candidate in $pythonCandidates) {
-        $command = Get-Command $candidate -ErrorAction SilentlyContinue
-        if ($command) {
-            return [string]$command.Source
-        }
-    }
-
-    throw 'Python was not found for monitor layout selection. Install Python or add py.exe/python.exe to PATH.'
-}
-
-function Get-DummyMonitorToggleScriptPath {
-    if (-not [string]::IsNullOrWhiteSpace($env:FLOWCELL_DUMMY_MONITOR_SCRIPT)) {
-        return $env:FLOWCELL_DUMMY_MONITOR_SCRIPT
-    }
-
-    throw 'Set FLOWCELL_DUMMY_MONITOR_SCRIPT to the local dummy monitor helper script path.'
-}
-
-function Get-DummyMonitorTargetDisplay {
-    if (-not [string]::IsNullOrWhiteSpace($env:FLOWCELL_DUMMY_MONITOR_TARGET_DISPLAY)) {
-        return $env:FLOWCELL_DUMMY_MONITOR_TARGET_DISPLAY
-    }
-
-    return '\\.\DISPLAY4'
-}
-
-$pythonExe = Get-PythonExecutablePath
-$toggleScript = Get-DummyMonitorToggleScriptPath
-if (-not (Test-Path -LiteralPath $toggleScript -PathType Leaf)) {
-    throw "Dummy monitor toggle script not found: $toggleScript"
-}
+. (Join-Path $PSScriptRoot 'DummyMonitorHelpers.ps1')
 
 $targetDisplay = Get-DummyMonitorTargetDisplay
-$profilesJson = & $pythonExe $toggleScript --list-layouts-json
-if ($LASTEXITCODE -ne 0) {
-    throw "Listing saved monitor layouts failed with exit code $LASTEXITCODE."
+$profilesResult = Invoke-DummyMonitorPython -Arguments @('--list-layouts-json')
+if ($profilesResult.ExitCode -ne 0) {
+    $detail = "Listing saved monitor layouts failed with exit code $($profilesResult.ExitCode)."
+    $logTail = Get-DummyMonitorLastLogLines
+    if (-not [string]::IsNullOrWhiteSpace($logTail)) {
+        $detail += "`r`n`r`nRecent helper log:`r`n$logTail"
+    }
+    Write-DummyMonitorStatus -Text $detail
+    throw $detail
 }
 
+$profilesJson = ($profilesResult.Output -join [Environment]::NewLine).Trim()
 $profiles = @($profilesJson | ConvertFrom-Json)
 if ($profiles.Count -eq 0) {
     [System.Windows.Forms.MessageBox]::Show(
@@ -130,14 +104,20 @@ if ($result -ne [System.Windows.Forms.DialogResult]::OK -or $listView.SelectedIt
 
 $targetName = $profiles[[int]$listView.SelectedItems[0].Tag].name
 
-$output = & $pythonExe $toggleScript --apply-layout $targetName --target-display $targetDisplay
-if ($LASTEXITCODE -ne 0) {
-    throw "Applying monitor layout failed with exit code $LASTEXITCODE."
+$applyResult = Invoke-DummyMonitorPython -Arguments @('--apply-layout', $targetName, '--target-display', $targetDisplay)
+if ($applyResult.ExitCode -ne 0) {
+    $detail = "Applying monitor layout '$targetName' failed with exit code $($applyResult.ExitCode)."
+    $logTail = Get-DummyMonitorLastLogLines
+    if (-not [string]::IsNullOrWhiteSpace($logTail)) {
+        $detail += "`r`n`r`nRecent helper log:`r`n$logTail"
+    }
+    Write-DummyMonitorStatus -Text $detail
+    throw $detail
 }
 
-$result = $output | ConvertFrom-Json
+Write-DummyMonitorStatus -Text ("Applied monitor layout '{0}'.`r`nTarget display: {1}`r`nHelper: {2}" -f $targetName, $targetDisplay, $applyResult.ScriptPath)
 [System.Windows.Forms.MessageBox]::Show(
-    "Applied layout '$($result.name)'. It is also now the active layout for future dummy restores.",
+    "Applied layout '$targetName'. It is also now the active layout for future dummy restores.",
     'Use Monitor Layout',
     [System.Windows.Forms.MessageBoxButtons]::OK,
     [System.Windows.Forms.MessageBoxIcon]::Information

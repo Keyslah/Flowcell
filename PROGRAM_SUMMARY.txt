@@ -30,6 +30,7 @@ Top-level folders:
 - Blender: Blender integration files, including FlowCell button wrappers and a sanitized public config.
 - FlowCell: the main desktop app, helper scripts, vendored dependencies, and ignored local runtime storage.
 - Illustrator: public Illustrator script area.
+- Illustrator\random: imported Illustrator script packs currently kept in-repo for evaluation/reference.
 - Photoshop: public Photoshop script area.
 - Windows: public Windows script area.
 - docs: repository documentation.
@@ -77,6 +78,9 @@ Blender FlowCell button wrappers belong in:
 Illustrator and Windows user-facing scripts are now expected directly inside their program folder:
 - Illustrator\*.jsx and Illustrator\*.js
 - Windows\*.ps1, *.cmd, *.bat, *.vbs, *.ahk, or similar public launchers
+
+Imported reference packs can also exist under:
+- Illustrator\random
 
 Photoshop repo-safe public scripts belong in:
 - Photoshop\*

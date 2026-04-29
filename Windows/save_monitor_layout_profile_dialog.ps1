@@ -4,40 +4,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName Microsoft.VisualBasic
 Add-Type -AssemblyName System.Windows.Forms
 
-function Get-PythonExecutablePath {
-    $pythonCandidates = @('py.exe', 'python.exe')
-
-    foreach ($candidate in $pythonCandidates) {
-        $command = Get-Command $candidate -ErrorAction SilentlyContinue
-        if ($command) {
-            return [string]$command.Source
-        }
-    }
-
-    throw 'Python was not found for monitor layout save. Install Python or add py.exe/python.exe to PATH.'
-}
-
-function Get-DummyMonitorToggleScriptPath {
-    if (-not [string]::IsNullOrWhiteSpace($env:FLOWCELL_DUMMY_MONITOR_SCRIPT)) {
-        return $env:FLOWCELL_DUMMY_MONITOR_SCRIPT
-    }
-
-    throw 'Set FLOWCELL_DUMMY_MONITOR_SCRIPT to the local dummy monitor helper script path.'
-}
-
-function Get-DummyMonitorTargetDisplay {
-    if (-not [string]::IsNullOrWhiteSpace($env:FLOWCELL_DUMMY_MONITOR_TARGET_DISPLAY)) {
-        return $env:FLOWCELL_DUMMY_MONITOR_TARGET_DISPLAY
-    }
-
-    return '\\.\DISPLAY4'
-}
-
-$pythonExe = Get-PythonExecutablePath
-$toggleScript = Get-DummyMonitorToggleScriptPath
-if (-not (Test-Path -LiteralPath $toggleScript -PathType Leaf)) {
-    throw "Dummy monitor toggle script not found: $toggleScript"
-}
+. (Join-Path $PSScriptRoot 'DummyMonitorHelpers.ps1')
 
 $targetDisplay = Get-DummyMonitorTargetDisplay
 
@@ -52,14 +19,20 @@ if ([string]::IsNullOrWhiteSpace($layoutName)) {
     exit 0
 }
 
-$output = & $pythonExe $toggleScript --save-layout $layoutName --target-display $targetDisplay
-if ($LASTEXITCODE -ne 0) {
-    throw "Saving monitor layout failed with exit code $LASTEXITCODE."
+$result = Invoke-DummyMonitorPython -Arguments @('--save-layout', $layoutName, '--target-display', $targetDisplay)
+if ($result.ExitCode -ne 0) {
+    $detail = "Saving monitor layout '$layoutName' failed with exit code $($result.ExitCode)."
+    $logTail = Get-DummyMonitorLastLogLines
+    if (-not [string]::IsNullOrWhiteSpace($logTail)) {
+        $detail += "`r`n`r`nRecent helper log:`r`n$logTail"
+    }
+    Write-DummyMonitorStatus -Text $detail
+    throw $detail
 }
 
-$result = $output | ConvertFrom-Json
+Write-DummyMonitorStatus -Text ("Saved monitor layout '{0}'.`r`nTarget display: {1}`r`nHelper: {2}" -f $layoutName, $targetDisplay, $result.ScriptPath)
 [System.Windows.Forms.MessageBox]::Show(
-    "Saved layout '$($result.name)' and made it active for future restores.",
+    "Saved layout '$layoutName' and made it active for future restores.",
     'Save Monitor Layout',
     [System.Windows.Forms.MessageBoxButtons]::OK,
     [System.Windows.Forms.MessageBoxIcon]::Information

@@ -1,14 +1,15 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$dialogScript = 'D:\Dev\workspace\Codex\flowcell\Windows\save_monitor_layout_profile_dialog.ps1'
+$dialogScript = Join-Path $PSScriptRoot 'save_monitor_layout_profile_dialog.ps1'
 if (-not (Test-Path -LiteralPath $dialogScript -PathType Leaf)) {
     throw "Monitor layout save dialog script not found: $dialogScript"
 }
 
-Start-Process -FilePath 'powershell.exe' -ArgumentList @(
+& 'powershell.exe' @(
     '-NoProfile',
     '-ExecutionPolicy', 'Bypass',
     '-Sta',
     '-File', $dialogScript
-) | Out-Null
+)
+exit $LASTEXITCODE

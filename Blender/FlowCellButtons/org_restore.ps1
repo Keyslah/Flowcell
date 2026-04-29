@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
-& 'D:\Dev\workspace\Codex\flowcell\Blender\FlowCellButtons\Invoke-BlenderFlowCellAction.ps1' -Action 'restore' -Label 'restore'
+$dispatcherPath = Join-Path $PSScriptRoot 'Invoke-BlenderFlowCellAction.ps1'
+& $dispatcherPath -Action 'restore' -Label 'restore'
 exit $LASTEXITCODE
 

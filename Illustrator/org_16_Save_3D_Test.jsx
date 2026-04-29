@@ -19,9 +19,11 @@
     var ROOT_3D = "3D";
     var ROOT_TRASH = "Trash";
     var ROOT_ARCHIVE = "Archive";
-    var CONTROLLER_ROOT = "C:/Users/aaron/Documents/codexapp/Illustrator/IllustratorAHKController";
-    var THREE_P5_WRAPPER = CONTROLLER_ROOT + "/run_macro_3d_test_3p5mm.vbs";
-    var P5_WRAPPER = CONTROLLER_ROOT + "/run_macro_3d_test_p5mm.vbs";
+    var SCRIPT_ROOT = File($.fileName).parent;
+    var REPO_ROOT = SCRIPT_ROOT.parent;
+    var HELPER_ROOT = REPO_ROOT.fsName.replace(/\\/g, "/") + "/FlowCell/helpers";
+    var THREE_P5_WRAPPER = HELPER_ROOT + "/Run3DTest3p5mm.vbs";
+    var P5_WRAPPER = HELPER_ROOT + "/Run3DTestp5mm.vbs";
     var THREE_P5_SIGNAL = Folder.temp.fsName + "/Illustrator_3D_Test_3p5mm.signal.txt";
     var P5_SIGNAL = Folder.temp.fsName + "/Illustrator_3D_Test_p5mm.signal.txt";
     var MACRO_TIMEOUT_MS = 180000;

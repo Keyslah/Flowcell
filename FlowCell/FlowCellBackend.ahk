@@ -5926,7 +5926,7 @@ class ScriptShortcutManager {
 
             section := "Binding_" idToken
             try {
-                shortcut := IniRead(this.bindingFilePath, section, "Shortcut")
+                shortcut := CanonicalizeShortcut(IniRead(this.bindingFilePath, section, "Shortcut"))
                 scriptPath := IniRead(this.bindingFilePath, section, "ScriptPath")
                 programTabId := IniRead(this.bindingFilePath, section, "ProgramTabId", "0")
                 this.bindings.Push({
@@ -5972,6 +5972,7 @@ class ScriptShortcutManager {
     }
 
     TryRegisterBinding(binding) {
+        binding.shortcut := CanonicalizeShortcut(binding.shortcut)
         callback := ObjBindMethod(this, "OnHotkeyPressed", binding.id)
         try {
             Hotkey binding.shortcut, callback, "On"
@@ -6011,7 +6012,7 @@ class ScriptShortcutManager {
     }
 
     AddBinding(shortcut, scriptPath) {
-        shortcut := Trim(shortcut)
+        shortcut := CanonicalizeShortcut(Trim(shortcut))
         scriptPath := Trim(scriptPath)
         validation := this.ValidateBindingFields(0, shortcut, scriptPath)
         if !validation.ok
@@ -6050,7 +6051,7 @@ class ScriptShortcutManager {
     }
 
     UpdateBinding(bindingId, shortcut, scriptPath) {
-        shortcut := Trim(shortcut)
+        shortcut := CanonicalizeShortcut(Trim(shortcut))
         scriptPath := Trim(scriptPath)
         validation := this.ValidateBindingFields(bindingId, shortcut, scriptPath)
         if !validation.ok
@@ -7063,8 +7064,27 @@ SafeDisplay(value) {
     return value
 }
 
+CanonicalizeShortcut(value) {
+    compact := RegExReplace(Trim(value), "\s+", "")
+    if compact = ""
+        return ""
+
+    altGrPlaceholder := "__FLOWCELL_ALTGR__"
+    compact := StrReplace(compact, "<^>!", altGrPlaceholder)
+    compact := StrReplace(compact, "<^", "^")
+    compact := StrReplace(compact, ">^", "^")
+    compact := StrReplace(compact, "<!", "!")
+    compact := StrReplace(compact, ">!", "!")
+    compact := StrReplace(compact, "<+", "+")
+    compact := StrReplace(compact, ">+", "+")
+    compact := StrReplace(compact, "<#", "#")
+    compact := StrReplace(compact, ">#", "#")
+    compact := StrReplace(compact, altGrPlaceholder, "<^>!")
+    return compact
+}
+
 NormalizeShortcut(value) {
-    return RegExReplace(StrLower(Trim(value)), "\s+", "")
+    return RegExReplace(StrLower(CanonicalizeShortcut(value)), "\s+", "")
 }
 
 CloneBindings(bindings) {
