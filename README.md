@@ -6,13 +6,30 @@ This repository is structured for public source control. Publishable source stay
 
 Support FlowCell: [![Donate via Stripe](https://img.shields.io/badge/Donate-Stripe-635BFF?logo=stripe&logoColor=white)](https://buy.stripe.com/aFa3cw2rF5fR7xyauo8AE01)
 
+## Script Folder Rules
+
+- Blender FlowCell button wrappers belong in `Blender/FlowCellButtons/`.
+- Illustrator user-facing scripts stay directly in `Illustrator/`.
+- Windows user-facing scripts stay directly in `Windows/`.
+- Photoshop repo-safe public scripts stay in `Photoshop/`.
+- Preferred filename prefixes are `file_`, `util_`, and `org_`.
+- These prefixes are only a file-organization convention. They do not route scripts to panels or change execution behavior.
+- `Illustrator/HelperScripts/` is reserved for internal helper scripts.
+
+Preferred usage:
+- `org_` for organization actions such as Illustrator layer tools or Blender collection tools
+- `file_` for file-oriented scripts
+- `util_` for utility scripts
+
+When a script is added through FlowCell's panel UI, the `Add Script` button opens in the current program folder, supports multi-select, adds one button per selected script, and writes those buttons only into the currently selected panel. Default button labels strip `file_`, `util_`, or `org_` from the displayed name only.
+
 ## Repository Layout
 
-- `FlowCell/`: main app code, launcher scripts, helpers, and vendored dependencies.
-- `Blender/`: preserved Blender integration area, including `FlowCellButtons/` and `config.json`.
-- `Illustrator/`: user-facing Illustrator scripts live directly in this folder.
+- `FlowCell/`: main app code, launcher scripts, helpers, vendored dependencies, and ignored local runtime storage under `FlowCell/local/`.
+- `Blender/`: Blender integration files, including `FlowCellButtons/` and the tracked public `config.json`.
+- `Illustrator/`: user-facing Illustrator scripts.
 - `Illustrator/HelperScripts/`: internal Illustrator helper scripts that are not meant to become user-facing buttons.
-- `Windows/`: user-facing Windows scripts live directly in this folder.
+- `Windows/`: user-facing Windows scripts.
 - `Photoshop/`: public Photoshop script area for repo-safe defaults.
 - `docs/`: repository and maintenance documentation.
 - `examples/`: public example configs with safe placeholders.
@@ -21,7 +38,7 @@ Support FlowCell: [![Donate via Stripe](https://img.shields.io/badge/Donate-Stri
 
 ## Local State Model
 
-FlowCell now keeps mutable runtime data in `FlowCell/local/`:
+FlowCell keeps mutable runtime data in `FlowCell/local/`:
 
 - `bindings.ini`
 - `flowcell_state.json`
@@ -36,31 +53,21 @@ FlowCell now keeps mutable runtime data in `FlowCell/local/`:
 
 GitHub pulls should not overwrite panel configuration, hotkeys, bindings, popout layouts, saved panels, or other user changes because those files are local-only.
 
-Blender can also use a local override config at `FlowCell/local/private/blender.config.local.json`. The tracked `Blender/config.json` is now a sanitized public default.
+Blender can also use a local override config at `FlowCell/local/private/blender.config.local.json`. The tracked `Blender/config.json` is the sanitized public default.
 
 Some Windows helper scripts also use local environment overrides for machine-specific tooling. See `examples/Windows/windows.env.example`.
-
-## Script Folder Rules
-
-- Blender keeps its current structured area.
-- Illustrator user-facing scripts stay directly in `Illustrator/`.
-- Windows user-facing scripts stay directly in `Windows/`.
-- Preferred filename prefixes are `file_`, `util_`, and `org_`.
-- These prefixes are only a file-organization convention. They do not route scripts to panels or change execution behavior.
-- `Illustrator/HelperScripts/` is reserved for internal helper scripts.
-
-Preferred usage:
-- `org_` for Illustrator layer-style scripts and Blender collections-style scripts
-- `file_` for file-panel scripts
-- `util_` for utility-style scripts
-
-When a script is added through FlowCell's panel UI, the `Add Script` button opens in the current program folder, supports multi-select, adds one button per selected script, and writes those buttons only into the currently selected panel. Default button labels strip `file_`, `util_`, or `org_` from the displayed name only.
 
 ## Running FlowCell
 
 - `run.cmd` at the repo root delegates to `FlowCell/run.cmd`.
 - `FlowCell/run.cmd` launches the PowerShell UI or the AutoHotkey backend.
 - Launcher logs are written to `FlowCell/local/logs/`.
+
+## Issues and Discussions
+
+- Use [GitHub Issues](https://github.com/Keyslah/Flowcell/issues) for bugs, regressions, broken scripts, and concrete feature work.
+- Use [GitHub Discussions](https://github.com/Keyslah/Flowcell/discussions) for questions, script ideas, workflow proposals, and early feedback before implementation.
+- If you are proposing a new script, mention the target folder and preferred prefix so it can be reviewed in the right place.
 
 ## Support FlowCell
 
