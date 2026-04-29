@@ -16,6 +16,7 @@ $wrapperRoot = Join-Path $projectRoot 'FlowCellButtons'
 $managedActionRoot = Join-Path $projectRoot 'ManagedActions'
 $supportRoot = Join-Path $projectRoot 'SupportScripts'
 $syncScriptPath = Join-Path $supportRoot 'Sync-BlenderButtonsToFlowCell.ps1'
+$customActionSyncPath = Join-Path $supportRoot 'Sync-BlenderCustomActionCode.ps1'
 $localConfigPath = Join-Path $repoRoot 'FlowCell\local\private\blender.config.local.json'
 if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
     $ConfigPath = if (Test-Path -LiteralPath $localConfigPath -PathType Leaf) { $localConfigPath } else { Join-Path $projectRoot 'config.json' }
@@ -135,6 +136,93 @@ function Get-PythonFunctionMetadata([string]$Path, [string]$PreferredFunctionNam
     }
 }
 
+function Get-PythonTopLevelFunctionNames([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return @()
+    }
+
+    $names = New-Object System.Collections.Generic.List[string]
+    foreach ($line in @(Get-Content -LiteralPath $Path)) {
+        if ([string]$line -match '^(?<indent>[ \t]*)def\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(' -and [string]$matches['indent'] -eq '') {
+            [void]$names.Add([string]$matches['name'])
+        }
+    }
+
+    return @($names.ToArray())
+}
+
+function Test-FlowCellCustomEntrypointName([string]$FunctionName) {
+    if ([string]::IsNullOrWhiteSpace($FunctionName)) {
+        return $false
+    }
+
+    return ([string]$FunctionName -ieq 'run_flowcell_action') -or
+        ([string]$FunctionName -ieq 'main') -or
+        ([string]$FunctionName -imatch '^perform_[A-Za-z0-9_]*$')
+}
+
+function Get-FlowCellCustomEntrypointMetadata([string]$Path, [string]$PreferredFunctionName = '') {
+    $availableFunctions = @(Get-PythonTopLevelFunctionNames -Path $Path)
+    $baseFailure = [pscustomobject]@{
+        FunctionName = ''
+        StartLine = 1
+        SourceText = ''
+        AvailableFunctions = $availableFunctions
+        Reason = 'Custom Blender button Python files must expose run_flowcell_action, main, or a perform_* function.'
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $baseFailure
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($PreferredFunctionName)) {
+        if (-not (Test-FlowCellCustomEntrypointName -FunctionName $PreferredFunctionName)) {
+            return $baseFailure
+        }
+
+        $preferredMeta = Get-PythonFunctionMetadata -Path $Path -PreferredFunctionName $PreferredFunctionName
+        if ([string]$preferredMeta.FunctionName -ieq [string]$PreferredFunctionName) {
+            return [pscustomobject]@{
+                FunctionName = [string]$preferredMeta.FunctionName
+                StartLine = [int]$preferredMeta.StartLine
+                SourceText = [string]$preferredMeta.SourceText
+                AvailableFunctions = $availableFunctions
+                Reason = ''
+            }
+        }
+
+        return $baseFailure
+    }
+
+    foreach ($candidateName in @('run_flowcell_action', 'main')) {
+        $candidateMeta = Get-PythonFunctionMetadata -Path $Path -PreferredFunctionName $candidateName
+        if ([string]$candidateMeta.FunctionName -ieq $candidateName) {
+            return [pscustomobject]@{
+                FunctionName = [string]$candidateMeta.FunctionName
+                StartLine = [int]$candidateMeta.StartLine
+                SourceText = [string]$candidateMeta.SourceText
+                AvailableFunctions = $availableFunctions
+                Reason = ''
+            }
+        }
+    }
+
+    foreach ($candidateName in @($availableFunctions | Where-Object { [string]$_ -imatch '^perform_[A-Za-z0-9_]*$' })) {
+        $candidateMeta = Get-PythonFunctionMetadata -Path $Path -PreferredFunctionName ([string]$candidateName)
+        if ([string]$candidateMeta.FunctionName -ieq [string]$candidateName) {
+            return [pscustomobject]@{
+                FunctionName = [string]$candidateMeta.FunctionName
+                StartLine = [int]$candidateMeta.StartLine
+                SourceText = [string]$candidateMeta.SourceText
+                AvailableFunctions = $availableFunctions
+                Reason = ''
+            }
+        }
+    }
+
+    return $baseFailure
+}
+
 function Get-BridgeActionFunctionMap {
     return @{
         'make_layers' = 'perform_make_layers'
@@ -251,11 +339,21 @@ function Update-WrapperMetadata([string]$WrapperPath, [string]$FallbackDescripti
     $sourceMeta = $null
     foreach ($entry in @($registry.actions)) {
         if ([string]$entry.action -ieq $actionName) {
-            $meta = Get-PythonFunctionMetadata -Path ([string]$entry.pythonPath) -PreferredFunctionName ([string]$entry.functionName)
+            $registryPythonPath = if ($entry.PSObject.Properties['sourcePythonPath'] -and -not [string]::IsNullOrWhiteSpace([string]$entry.sourcePythonPath)) {
+                [string]$entry.sourcePythonPath
+            } else {
+                [string]$entry.pythonPath
+            }
+            $registryFunctionName = if ($entry.PSObject.Properties['sourceFunctionName'] -and -not [string]::IsNullOrWhiteSpace([string]$entry.sourceFunctionName)) {
+                [string]$entry.sourceFunctionName
+            } else {
+                [string]$entry.functionName
+            }
+            $meta = Get-PythonFunctionMetadata -Path $registryPythonPath -PreferredFunctionName $registryFunctionName
             $sourceMeta = [pscustomobject]@{
-                PythonPath = [string]$entry.pythonPath
-                FunctionName = if ([string]::IsNullOrWhiteSpace([string]$entry.functionName)) { [string]$meta.FunctionName } else { [string]$entry.functionName }
-                StartLine = if ($entry.PSObject.Properties['startLine']) { [int]$entry.startLine } else { [int]$meta.StartLine }
+                PythonPath = $registryPythonPath
+                FunctionName = if ([string]::IsNullOrWhiteSpace($registryFunctionName)) { [string]$meta.FunctionName } else { $registryFunctionName }
+                StartLine = [int]$meta.StartLine
                 SourceText = [string]$meta.SourceText
             }
             break
@@ -347,9 +445,26 @@ foreach ($selectedPathRaw in @($SelectedPaths)) {
     $sourceMeta = $null
 
     if ($extension -eq '.py') {
+        $entrypointMeta = Get-FlowCellCustomEntrypointMetadata -Path $fullPath
+        if ([string]::IsNullOrWhiteSpace([string]$entrypointMeta.FunctionName)) {
+            $availableFunctions = @($entrypointMeta.AvailableFunctions)
+            $availableSummary = if ($availableFunctions.Count -gt 0) {
+                ' Found top-level functions: ' + (($availableFunctions | ForEach-Object { "'$_'" }) -join ', ') + '.'
+            }
+            else {
+                ' No top-level Python functions were found.'
+            }
+            $installResults.Add([pscustomobject]@{
+                Source = $fullPath
+                Installed = $false
+                Message = ([string]$entrypointMeta.Reason + $availableSummary)
+            }) | Out-Null
+            continue
+        }
+
         $managedPythonPath = Join-Path $managedActionRoot ('{0}.py' -f $actionName)
         Copy-Item -LiteralPath $fullPath -Destination $managedPythonPath -Force
-        $meta = Get-PythonFunctionMetadata -Path $managedPythonPath
+        $meta = Get-PythonFunctionMetadata -Path $managedPythonPath -PreferredFunctionName ([string]$entrypointMeta.FunctionName)
         $pythonPath = $managedPythonPath
         $functionName = [string]$meta.FunctionName
         $startLine = [int]$meta.StartLine
@@ -404,14 +519,18 @@ foreach ($selectedPathRaw in @($SelectedPaths)) {
     if (@($existingEntry).Count -gt 0) {
         $existingEntry[0].pythonPath = [string]$pythonPath
         $existingEntry[0].functionName = [string]$functionName
-        $existingEntry[0].startLine = [int]$startLine
-        $existingEntry[0].description = [string]$description
+        $existingEntry[0] | Add-Member -MemberType NoteProperty -Name sourcePythonPath -Value ([string]$pythonPath) -Force
+        $existingEntry[0] | Add-Member -MemberType NoteProperty -Name sourceFunctionName -Value ([string]$functionName) -Force
+        $existingEntry[0] | Add-Member -MemberType NoteProperty -Name startLine -Value ([int]$startLine) -Force
+        $existingEntry[0] | Add-Member -MemberType NoteProperty -Name description -Value ([string]$description) -Force
     }
     else {
         $registry.actions += [pscustomobject]@{
             action = [string]$actionName
             pythonPath = [string]$pythonPath
             functionName = [string]$functionName
+            sourcePythonPath = [string]$pythonPath
+            sourceFunctionName = [string]$functionName
             startLine = [int]$startLine
             description = [string]$description
         }
@@ -432,6 +551,21 @@ foreach ($selectedPathRaw in @($SelectedPaths)) {
 
 Set-Content -LiteralPath $ConfigPath -Value ($config | ConvertTo-Json -Depth 16) -Encoding UTF8
 Set-Content -LiteralPath $customRegistryPath -Value ($registry | ConvertTo-Json -Depth 8) -Encoding UTF8
+
+if (Test-Path -LiteralPath $customActionSyncPath -PathType Leaf) {
+    & $customActionSyncPath -ConfigPath $ConfigPath -BridgeFolder $BridgeFolder | Out-Null
+    if (Test-Path -LiteralPath $customRegistryPath -PathType Leaf) {
+        try {
+            $registry = Get-Content -LiteralPath $customRegistryPath -Raw | ConvertFrom-Json
+            if ($null -eq $registry.actions) {
+                $registry | Add-Member -MemberType NoteProperty -Name actions -Value @() -Force
+            }
+        }
+        catch {
+            $registry = [pscustomobject]@{ actions = @() }
+        }
+    }
+}
 
 foreach ($wrapper in @(Get-ChildItem -LiteralPath $wrapperRoot -Filter '*.ps1' -File -ErrorAction SilentlyContinue)) {
     Update-WrapperMetadata -WrapperPath $wrapper.FullName

@@ -25,8 +25,11 @@ The repository is now arranged for public GitHub use. Tracked source, docs, exam
 FlowCell also now includes donation support through .github\FUNDING.yml, a README support badge link, and a Stripe Payment Link.
 Contributor guidance now explicitly requires relative repo-path resolution instead of tracked machine-specific absolute paths.
 README and contributor docs now lead with script folder rules, explicitly point Blender submissions to Blender\FlowCellButtons, and direct contributors toward GitHub Issues for bugs and GitHub Discussions for questions or early script proposals.
-README, docs\blender-buttons.md, and Blender\FlowCellButtons\README.md now use the same explicit Blender-button description text. That text explains Add Button as a Blender `.py` picker, describes single-action versus tool-set scripts, points at the live `...\scripts\addons\blender_bridge\flowcell_actions.py` file as the Blender-side logic file, explains wrappers in Blender\FlowCellButtons, shows the click path through Invoke-BlenderFlowCellAction.ps1, and states that ScriptDump is private non-GitHub-updated storage.
-That shared Blender-button description is now formatted as readable chunks instead of one dense block, with spacing around the script-type list, live file path, wrapper path, dispatcher call, and click path.
+README now keeps the Blender-button explanation short instead of duplicating the deep doc.
+docs\blender-buttons.md now carries the detailed Blender-button reference using FlowCell-root paths only, covering FlowCellButtons, SupportScripts, ManagedActions, config files, Blender runtime filenames, and ScriptDump locations without embedding personal machine paths.
+That deep Blender-button doc now explicitly states that FlowCell copies the selected script's code into the live Blender file `...\scripts\addons\blender_bridge\flowcell_actions.py`.
+That doc now also explains Blender custom-action script structure in concrete terms: required entrypoint names, accepted callable signatures, recommended return shapes, failure handling, top-level function requirements, and a minimal starter template.
+Blender\FlowCellButtons\README.md is back to being a tiny folder-specific note that points readers at docs\blender-buttons.md.
 
 Top-level folders:
 - Blender: Blender integration files, including FlowCell button scripts, Blender support infrastructure, and a sanitized public config.
@@ -144,6 +147,7 @@ The main FlowCell panel Add Script button now:
 - on Blender tabs, this control is labeled `Add Button` to match the one-click button workflow
 - on Blender tabs, `Add Button` now runs a real installer flow for `.py` and `.ps1` selections: install/register a Blender bridge action, create or update a bridge wrapper in `Blender\FlowCellButtons`, add the new button to the currently selected FlowCell panel, and sync the Blender button list back into FlowCell state/layout files
 - Blender `Add Button` now reports when Blender must reload the add-on or restart before a newly installed action is callable
+- Blender `Add Button` now only accepts Python files that expose `run_flowcell_action`, `main`, or a `perform_*` function, and rejects listener/bootstrap files instead of registering dead custom actions
 
 Default button labels come from the filename with any leading file_, util_, or org_ prefix removed for display only.
 
@@ -222,6 +226,7 @@ Blender remains structured around:
 
 - Blender\SupportScripts\Invoke-BlenderFlowCellAction.ps1 as the dispatcher support script
 - Blender\SupportScripts\Sync-BlenderButtonsToFlowCell.ps1 as the sync/regeneration support script
+- Blender\SupportScripts\Sync-BlenderCustomActionCode.ps1 as the live custom-code regeneration support script
 - Blender\FlowCellButtons\org_*.ps1 user-facing button scripts for collections-style actions
 - Blender\FlowCellButtons\file_*.ps1 user-facing button scripts for file-style actions
 - Blender\FlowCellButtons\util_*.ps1 user-facing button scripts for utility-style actions
@@ -230,13 +235,17 @@ Blender remains structured around:
 
 Generated Blender button scripts resolve the dispatcher from a sibling SupportScripts folder instead of hardcoding a machine-local repo path.
 Normal button discovery and Blender template setup must not treat Invoke-BlenderFlowCellAction.ps1 or Sync-BlenderButtonsToFlowCell.ps1 as user-facing button scripts.
+The real Blender bridge runtime folder is the live AppData add-on path referenced by `automation.bridgeFolder`; it does not belong under `Blender\FlowCellButtons` or `Blender\SupportScripts` inside the repo.
 The installed Blender addon runtime file `flowcell_actions.py` now identifies itself as `Blender Organizer` and includes a top-of-file button reference block that documents each button's behavior in concise terms.
 Blender FlowCell button descriptions now avoid generic placeholders and include explicit behavior details (for example, `sort` now documents visible-to-Live, matching invisible-to-Snapshots `s#`, and remaining invisible-to-Trash `t#` behavior).
 Blender wrapper scripts now consistently resolve the dispatcher from `Blender\SupportScripts\Invoke-BlenderFlowCellAction.ps1`, including `file_cura.ps1`, `file_orca.ps1`, and `util_cursor_center_hole.ps1`.
 Blender `Add Button` installs custom action scripts into `Blender\ManagedActions` and registers them through `blender_bridge\flowcell_custom_actions.json` under the live Blender add-ons path.
-The Blender bridge runtime (`flowcell_bridge.py` and `flowcell_actions.py` in the Blender add-ons folder) now supports executing registered custom actions by action id from that registry.
+The Blender bridge runtime now regenerates an auto-generated custom-action section inside the live `flowcell_actions.py` file from the currently registered Blender buttons, so only active custom button handlers remain in that file.
+That custom-action regeneration path now also drops registry entries whose source Python file no longer exposes a supported FlowCell entrypoint, so stale invalid custom buttons cannot keep reappearing from the live Blender registry.
+Deleting a Blender button now also removes its matching Blender config entry, prunes any orphaned custom-action registry entry and managed source file, regenerates the live `flowcell_actions.py` custom section, and re-syncs Blender wrappers/panels so removed buttons do not come back later.
 Every wrapper in `Blender\FlowCellButtons` now starts with a `Description:` line plus a source map (`Source Python File`, action/function, and start line) followed by a commented copy of the real Python logic, while still dispatching through `Blender\SupportScripts\Invoke-BlenderFlowCellAction.ps1`.
 `Sync-BlenderButtonsToFlowCell.ps1` now preserves and regenerates that wrapper metadata block for built-in Blender action wrappers, including blank-line spacing between the description, source-map fields, and commented Python logic.
+That Blender sync path now also skips popout-only layout snapshots that do not embed a full `Programs` state payload, so routine Blender button syncs no longer emit false layout warnings.
 Built-in Blender action wrappers and the live Blender config now prefer an authoritative action-description map during install/sync, so stale generic tooltips like `Run the Blender sort action...` are replaced with behavior-specific text in both wrapper headers and launcher metadata.
 
 The public example for Blender config now belongs in:
@@ -279,6 +288,7 @@ UI-dependent Windows scripts now launch through the backend STA path when their 
 
 FlowCell's backend runner now respects child process exit codes and preserves script-written status output for CLI/button launches, so Update GitHub reports real verified Git success or failure instead of a generic launcher result.
 The Update GitHub script also disables PowerShell's native-command stderr escalation around Git calls so normal push progress output does not get misreported as a failure after a successful push.
+The Update GitHub flow now opens a topmost commit-message dialog that shows the resolved repo path, writes clearer intermediate status text while waiting/committing, and gets a longer FlowCell script timeout so interactive git pushes are not killed after the generic 120-second window.
 
 Release model
 -------------

@@ -12,6 +12,7 @@ $flowCellLayoutsRoot = Join-Path $localRoot 'layouts'
 $wrapperRoot = Join-Path $projectRoot 'FlowCellButtons'
 $supportRoot = Join-Path $projectRoot 'SupportScripts'
 $dispatcherPath = Join-Path $supportRoot 'Invoke-BlenderFlowCellAction.ps1'
+$customActionSyncPath = Join-Path $supportRoot 'Sync-BlenderCustomActionCode.ps1'
 $renameSelectedPath = Join-Path $wrapperRoot 'org_rename_selected_objects.ps1'
 $legacyAddonPattern = Join-Path (Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'Blender Foundation\Blender') '*\scripts\addons\flowcell_*.py'
 
@@ -173,6 +174,21 @@ if (-not [string]::IsNullOrWhiteSpace($customRegistryPath) -and (Test-Path -Lite
     }
 }
 
+if (Test-Path -LiteralPath $customActionSyncPath -PathType Leaf) {
+    & $customActionSyncPath -ConfigPath $configPath -BridgeFolder $bridgeFolder | Out-Null
+    if (-not [string]::IsNullOrWhiteSpace($customRegistryPath) -and (Test-Path -LiteralPath $customRegistryPath -PathType Leaf)) {
+        try {
+            $registry = Get-Content -LiteralPath $customRegistryPath -Raw | ConvertFrom-Json
+            if ($null -eq $registry.actions) {
+                $registry | Add-Member -MemberType NoteProperty -Name actions -Value @() -Force
+            }
+        }
+        catch {
+            $registry = [pscustomobject]@{ actions = @() }
+        }
+    }
+}
+
 function Get-PythonFunctionMetadata([string]$Path, [string]$PreferredFunctionName = '') {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         return [pscustomobject]@{ FunctionName = ''; StartLine = 1; SourceText = '' }
@@ -266,11 +282,21 @@ function Get-BridgeActionFunctionMap {
 function Get-SourceMetadataForAction([string]$ActionName) {
     foreach ($entry in @($registry.actions)) {
         if ([string]$entry.action -ieq $ActionName) {
-            $meta = Get-PythonFunctionMetadata -Path ([string]$entry.pythonPath) -PreferredFunctionName ([string]$entry.functionName)
+            $registryPythonPath = if ($entry.PSObject.Properties['sourcePythonPath'] -and -not [string]::IsNullOrWhiteSpace([string]$entry.sourcePythonPath)) {
+                [string]$entry.sourcePythonPath
+            } else {
+                [string]$entry.pythonPath
+            }
+            $registryFunctionName = if ($entry.PSObject.Properties['sourceFunctionName'] -and -not [string]::IsNullOrWhiteSpace([string]$entry.sourceFunctionName)) {
+                [string]$entry.sourceFunctionName
+            } else {
+                [string]$entry.functionName
+            }
+            $meta = Get-PythonFunctionMetadata -Path $registryPythonPath -PreferredFunctionName $registryFunctionName
             return [pscustomobject]@{
-                PythonPath = [string]$entry.pythonPath
-                FunctionName = if ([string]::IsNullOrWhiteSpace([string]$entry.functionName)) { [string]$meta.FunctionName } else { [string]$entry.functionName }
-                StartLine = if ($entry.PSObject.Properties['startLine']) { [int]$entry.startLine } else { [int]$meta.StartLine }
+                PythonPath = $registryPythonPath
+                FunctionName = if ([string]::IsNullOrWhiteSpace($registryFunctionName)) { [string]$meta.FunctionName } else { $registryFunctionName }
+                StartLine = [int]$meta.StartLine
                 SourceText = [string]$meta.SourceText
             }
         }
@@ -710,6 +736,10 @@ foreach ($layoutPath in $layoutPaths) {
         }
         else {
             $layoutPayload
+        }
+
+        if (-not ($layoutState.PSObject.Properties['Programs']) -or $null -eq $layoutState.Programs) {
+            continue
         }
 
         $layoutBlenderProgram = @($layoutState.Programs | Where-Object { [int]$_.ProgramTabId -eq 3 } | Select-Object -First 1)

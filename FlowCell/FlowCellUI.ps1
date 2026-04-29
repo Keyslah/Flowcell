@@ -9817,6 +9817,14 @@ function Invoke-FlowCellScriptTarget($ProgramTab, [string]$ScriptPath) {
         $scriptDisplayName = [System.IO.Path]::GetFileNameWithoutExtension($ScriptPath)
         if ([string]::IsNullOrWhiteSpace($scriptDisplayName)) { $scriptDisplayName = $ScriptPath }
         $lastActionStatusPath = [string]$script:LastActionStatusPath
+        $scriptFileName = [System.IO.Path]::GetFileName([string]$ScriptPath)
+        $scriptTimeoutSeconds = 120
+        if (-not [string]::IsNullOrWhiteSpace($scriptFileName)) {
+            $normalizedScriptFileName = [string]$scriptFileName.ToLowerInvariant()
+            if ($normalizedScriptFileName -like '*update_github*') {
+                $scriptTimeoutSeconds = 900
+            }
+        }
         Set-ActionStatus ('Running script: {0}...' -f $scriptDisplayName)
 
         $onComplete = {
@@ -9838,7 +9846,7 @@ function Invoke-FlowCellScriptTarget($ProgramTab, [string]$ScriptPath) {
             ('--run-script-path={0}' -f $ScriptPath),
             ('--run-script-program={0}' -f $programKey),
             ('--run-script-program-tab-id={0}' -f [int]$ProgramTab.Id)
-        ) -Metadata @{ TimeoutSeconds = 120 } -OnComplete $onComplete
+        ) -Metadata @{ TimeoutSeconds = $scriptTimeoutSeconds } -OnComplete $onComplete
 
         return [pscustomobject]@{
             Succeeded = [bool]$started
@@ -11018,6 +11026,7 @@ function Remove-FlowCellBindEntry($Entry) {
     }
 
     Save-FlowCellState
+    [void](Invoke-FlowCellBlenderButtonDeleteCleanup -Entry $Entry)
     Save-State
     Restart-Backend
     return $true
@@ -11032,6 +11041,140 @@ function Rename-FlowCellButton([int]$ProgramTabId, [string]$PanelId, [string]$Bu
     if (@($button).Count -eq 0) { return $false }
     $button[0].Label = $NewLabel.Trim()
     Save-FlowCellState
+    return $true
+}
+
+function Move-FlowCellFileToRecycleBin([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return
+    }
+
+    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile(
+        $Path,
+        [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs,
+        [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin
+    )
+}
+
+function Invoke-FlowCellBlenderButtonDeleteCleanup($Entry) {
+    if ($null -eq $Entry) { return $false }
+    $programTab = if ($Entry.PSObject.Properties['ProgramTab'] -and $Entry.ProgramTab) { $Entry.ProgramTab } else { Get-FlowCellProgramTab -ProgramTabId ([int]$Entry.ProgramTabId) }
+    if ($null -eq $programTab -or (Get-ProgramLabelKey ([string]$programTab.Label)) -ne 'blender') {
+        return $false
+    }
+
+    $configPath = Get-FlowCellBlenderConfigPath
+    if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+        return $false
+    }
+
+    $targetPath = [string]$Entry.Target
+    $normalizedTargetPath = Get-FlowCellNormalizedPath $targetPath
+    $wrapperAction = Get-FlowCellWrapperAction -ScriptPath $targetPath
+    if ([string]::IsNullOrWhiteSpace($normalizedTargetPath) -and [string]::IsNullOrWhiteSpace($wrapperAction)) {
+        return $false
+    }
+
+    $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+    if ($null -eq $config.buttons) {
+        $config | Add-Member -MemberType NoteProperty -Name buttons -Value @() -Force
+    }
+
+    $removedActions = New-Object System.Collections.Generic.List[string]
+    $remainingButtons = New-Object System.Collections.Generic.List[object]
+    foreach ($button in @($config.buttons)) {
+        $buttonScriptPath = if ($button.PSObject.Properties['scriptPath']) { Get-FlowCellNormalizedPath ([string]$button.scriptPath) } else { '' }
+        $buttonAction = if ($button.PSObject.Properties['action']) { [string]$button.action } else { '' }
+        $matchesTarget = (-not [string]::IsNullOrWhiteSpace($normalizedTargetPath) -and -not [string]::IsNullOrWhiteSpace($buttonScriptPath) -and $buttonScriptPath -eq $normalizedTargetPath)
+        $matchesAction = (-not [string]::IsNullOrWhiteSpace($wrapperAction) -and -not [string]::IsNullOrWhiteSpace($buttonAction) -and $buttonAction -ieq $wrapperAction)
+        if ($matchesTarget -or $matchesAction) {
+            if (-not [string]::IsNullOrWhiteSpace($buttonAction) -and -not $removedActions.Contains($buttonAction)) {
+                [void]$removedActions.Add($buttonAction)
+            }
+            continue
+        }
+        [void]$remainingButtons.Add($button)
+    }
+
+    if (@($config.buttons).Count -eq $remainingButtons.Count) {
+        return $false
+    }
+
+    $config.buttons = @($remainingButtons.ToArray())
+    Set-Content -LiteralPath $configPath -Value ($config | ConvertTo-Json -Depth 16) -Encoding UTF8
+
+    $bridgeFolder = if ($config.PSObject.Properties['automation'] -and $config.automation -and $config.automation.PSObject.Properties['bridgeFolder']) {
+        [string]$config.automation.bridgeFolder
+    } else {
+        ''
+    }
+    $customRegistryPath = if ([string]::IsNullOrWhiteSpace($bridgeFolder)) { '' } else { Join-Path $bridgeFolder 'flowcell_custom_actions.json' }
+    if (-not [string]::IsNullOrWhiteSpace($customRegistryPath)) {
+        $registry = [pscustomobject]@{ actions = @() }
+        if (Test-Path -LiteralPath $customRegistryPath -PathType Leaf) {
+            try {
+                $registry = Get-Content -LiteralPath $customRegistryPath -Raw | ConvertFrom-Json
+                if ($null -eq $registry.actions) {
+                    $registry | Add-Member -MemberType NoteProperty -Name actions -Value @() -Force
+                }
+            }
+            catch {
+                $registry = [pscustomobject]@{ actions = @() }
+            }
+        }
+
+        $managedRoot = Get-FlowCellNormalizedPath (Join-Path $script:FlowCellHomeRoot 'Blender\ManagedActions')
+        $liveActionsPath = if ([string]::IsNullOrWhiteSpace($bridgeFolder)) { '' } else { Get-FlowCellNormalizedPath (Join-Path (Split-Path -Parent $bridgeFolder) 'flowcell_actions.py') }
+        $prunedSourcePaths = New-Object System.Collections.Generic.List[string]
+        $remainingRegistry = New-Object System.Collections.Generic.List[object]
+        foreach ($registryEntry in @($registry.actions)) {
+            $registryAction = if ($registryEntry.PSObject.Properties['action']) { [string]$registryEntry.action } else { '' }
+            if (
+                -not [string]::IsNullOrWhiteSpace($registryAction) -and
+                $removedActions.Contains($registryAction) -and
+                @($config.buttons | Where-Object { $_.PSObject.Properties['action'] -and [string]$_.action -ieq $registryAction }).Count -eq 0
+            ) {
+                $sourcePath = if ($registryEntry.PSObject.Properties['sourcePythonPath'] -and -not [string]::IsNullOrWhiteSpace([string]$registryEntry.sourcePythonPath)) {
+                    Get-FlowCellNormalizedPath ([string]$registryEntry.sourcePythonPath)
+                }
+                elseif ($registryEntry.PSObject.Properties['pythonPath']) {
+                    Get-FlowCellNormalizedPath ([string]$registryEntry.pythonPath)
+                }
+                else {
+                    ''
+                }
+                if (
+                    -not [string]::IsNullOrWhiteSpace($sourcePath) -and
+                    $sourcePath -ne $liveActionsPath -and
+                    $sourcePath.StartsWith($managedRoot)
+                ) {
+                    [void]$prunedSourcePaths.Add($sourcePath)
+                }
+                continue
+            }
+            [void]$remainingRegistry.Add($registryEntry)
+        }
+
+        $registry.actions = @($remainingRegistry.ToArray())
+        Set-Content -LiteralPath $customRegistryPath -Value ($registry | ConvertTo-Json -Depth 8) -Encoding UTF8
+
+        foreach ($sourcePath in @($prunedSourcePaths.ToArray() | Select-Object -Unique)) {
+            Move-FlowCellFileToRecycleBin -Path $sourcePath
+        }
+    }
+
+    $supportRoot = Get-FlowCellBlenderSupportFolder
+    $customActionSyncPath = Join-Path $supportRoot 'Sync-BlenderCustomActionCode.ps1'
+    if (Test-Path -LiteralPath $customActionSyncPath -PathType Leaf) {
+        & $customActionSyncPath -ConfigPath $configPath -BridgeFolder $bridgeFolder | Out-Null
+    }
+
+    $syncScriptPath = Join-Path $supportRoot 'Sync-BlenderButtonsToFlowCell.ps1'
+    if (Test-Path -LiteralPath $syncScriptPath -PathType Leaf) {
+        & $syncScriptPath | Out-Null
+    }
+
+    $script:FlowCellState = Read-FlowCellState
     return $true
 }
 

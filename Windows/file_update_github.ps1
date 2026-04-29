@@ -48,6 +48,72 @@ function Show-ResultMessage(
     }
 }
 
+function Show-TopMostTextPrompt(
+    [string]$Title,
+    [string]$Prompt,
+    [string]$DefaultValue = '',
+    [string]$OkText = 'OK',
+    [string]$CancelText = 'Cancel'
+) {
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = $Title
+    $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+    $form.Size = New-Object System.Drawing.Size(640, 220)
+    $form.MinimumSize = New-Object System.Drawing.Size(520, 220)
+    $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+    $form.MaximizeBox = $false
+    $form.MinimizeBox = $false
+    $form.ShowInTaskbar = $true
+    $form.TopMost = $true
+    $form.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+
+    $promptLabel = New-Object System.Windows.Forms.Label
+    $promptLabel.AutoSize = $false
+    $promptLabel.Location = New-Object System.Drawing.Point(12, 12)
+    $promptLabel.Size = New-Object System.Drawing.Size(600, 58)
+    $promptLabel.Text = $Prompt
+
+    $textBox = New-Object System.Windows.Forms.TextBox
+    $textBox.Location = New-Object System.Drawing.Point(12, 78)
+    $textBox.Size = New-Object System.Drawing.Size(600, 28)
+    $textBox.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+    $textBox.Text = [string]$DefaultValue
+
+    $okButton = New-Object System.Windows.Forms.Button
+    $okButton.Text = $OkText
+    $okButton.Size = New-Object System.Drawing.Size(100, 32)
+    $okButton.Location = New-Object System.Drawing.Point(402, 126)
+    $okButton.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
+    $okButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
+
+    $cancelButton = New-Object System.Windows.Forms.Button
+    $cancelButton.Text = $CancelText
+    $cancelButton.Size = New-Object System.Drawing.Size(100, 32)
+    $cancelButton.Location = New-Object System.Drawing.Point(512, 126)
+    $cancelButton.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
+    $cancelButton.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+
+    $form.Controls.Add($promptLabel)
+    $form.Controls.Add($textBox)
+    $form.Controls.Add($okButton)
+    $form.Controls.Add($cancelButton)
+    $form.AcceptButton = $okButton
+    $form.CancelButton = $cancelButton
+
+    $form.Add_Shown({
+        $form.Activate()
+        $textBox.Focus()
+        $textBox.SelectAll()
+    })
+
+    $dialogResult = $form.ShowDialog()
+    if ($dialogResult -ne [System.Windows.Forms.DialogResult]::OK) {
+        return $null
+    }
+
+    return [string]$textBox.Text
+}
+
 function Get-ClipboardPath {
     try {
         $clipboardText = Get-Clipboard -Raw -ErrorAction Stop
@@ -227,6 +293,25 @@ function Get-RepositoryRoot([string]$CandidatePath) {
     return ''
 }
 
+function Convert-ToProcessArgument([string]$Value) {
+    if ($null -eq $Value) {
+        return '""'
+    }
+
+    $text = [string]$Value
+    if ($text.Length -eq 0) {
+        return '""'
+    }
+
+    if ($text -notmatch '[\s"]') {
+        return $text
+    }
+
+    $escaped = $text -replace '(\\*)"', '$1$1\"'
+    $escaped = $escaped -replace '(\\+)$', '$1$1'
+    return ('"{0}"' -f $escaped)
+}
+
 function Invoke-Git {
     param(
         [Parameter(Mandatory = $true)]
@@ -237,28 +322,30 @@ function Invoke-Git {
     )
 
     $gitExe = Get-GitExecutablePath
-    $previousNativeErrorPreference = $null
-    $hasNativeErrorPreference = $false
-    try {
-        $nativePreferenceVariable = Get-Variable -Name 'PSNativeCommandUseErrorActionPreference' -ErrorAction Stop
-        $previousNativeErrorPreference = [bool]$nativePreferenceVariable.Value
-        $hasNativeErrorPreference = $true
-        Set-Variable -Name 'PSNativeCommandUseErrorActionPreference' -Value $false
-    }
-    catch {
-        $hasNativeErrorPreference = $false
-    }
+    $processStartInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $processStartInfo.FileName = $gitExe
+    $processStartInfo.WorkingDirectory = $RepositoryRoot
+    $processStartInfo.UseShellExecute = $false
+    $processStartInfo.RedirectStandardOutput = $true
+    $processStartInfo.RedirectStandardError = $true
+    $processStartInfo.CreateNoWindow = $true
+    $processStartInfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $processStartInfo.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+    $processArgumentValues = @('-C', $RepositoryRoot) + @($Arguments | ForEach-Object { [string]$_ })
+    $processStartInfo.Arguments = (($processArgumentValues | ForEach-Object { Convert-ToProcessArgument -Value ([string]$_) }) -join ' ')
 
-    try {
-        $output = & $gitExe -C $RepositoryRoot @Arguments 2>&1
-        $exitCode = $LASTEXITCODE
-    }
-    finally {
-        if ($hasNativeErrorPreference) {
-            Set-Variable -Name 'PSNativeCommandUseErrorActionPreference' -Value $previousNativeErrorPreference
-        }
-    }
-    $lines = @($output | ForEach-Object { [string]$_ })
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $processStartInfo
+    [void]$process.Start()
+    $stdOut = $process.StandardOutput.ReadToEnd()
+    $stdErr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+    $exitCode = [int]$process.ExitCode
+
+    $lines = @(
+        @($stdOut -split "(`r`n|`n|`r)" | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) +
+        @($stdErr -split "(`r`n|`n|`r)" | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    )
     $warningPatterns = @(
         "^warning: in the working copy of '.*', LF will be replaced by CRLF the next time Git touches it$",
         "^warning: in the working copy of '.*', CRLF will be replaced by LF the next time Git touches it$"
@@ -372,21 +459,25 @@ function Get-CommitMessage([string]$RepositoryRoot, [string]$BranchName) {
 
     $repoName = Split-Path -Leaf $RepositoryRoot
     $defaultMessage = 'Update {0} ({1}) {2}' -f $repoName, $BranchName, (Get-Date -Format 'yyyy-MM-dd HH:mm')
-    $message = [Microsoft.VisualBasic.Interaction]::InputBox(
-        ('Commit message for {0}:' -f $repoName),
-        'Update GitHub',
-        $defaultMessage
-    )
-
+    Write-Status ('Waiting for commit message for:{0}{0}{1}' -f [Environment]::NewLine, $RepositoryRoot)
+    $message = Show-TopMostTextPrompt `
+        -Title 'Update GitHub' `
+        -Prompt ('Commit message for {0}:{1}{1}{2}' -f $repoName, [Environment]::NewLine, $RepositoryRoot) `
+        -DefaultValue $defaultMessage `
+        -OkText 'Commit and Push' `
+        -CancelText 'Cancel'
     if ($null -eq $message) {
+        Write-Status ('Update GitHub cancelled for {0}.' -f $RepositoryRoot)
         return $null
     }
 
     $message = $message.Trim()
     if ([string]::IsNullOrWhiteSpace($message)) {
+        Write-Status ('Update GitHub cancelled for {0}.' -f $RepositoryRoot)
         return $null
     }
 
+    Write-Status ('Committing and pushing:{0}{0}{1}{0}Branch: {2}' -f [Environment]::NewLine, $RepositoryRoot, $BranchName)
     return $message
 }
 
