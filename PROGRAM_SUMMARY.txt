@@ -25,9 +25,7 @@ The repository is now arranged for public GitHub use. Tracked source, docs, exam
 FlowCell also now includes donation support through .github\FUNDING.yml, a README support badge link, and a Stripe Payment Link.
 Contributor guidance now explicitly requires relative repo-path resolution instead of tracked machine-specific absolute paths.
 README and contributor docs now lead with script folder rules, explicitly point Blender submissions to Blender\FlowCellButtons, and direct contributors toward GitHub Issues for bugs and GitHub Discussions for questions or early script proposals.
-README now includes a short "How Blender buttons work" section near the top that explains wrappers vs. real Blender add-on logic, points readers at Blender\SupportScripts and FlowCell\local, and links to docs\blender-buttons.md for the deeper explanation.
-docs\blender-buttons.md now serves as the detailed Blender-button guide, covering wrapper/add-on/bridge roles, expected folder ownership, the Add Button install flow, and Blender reload expectations.
-Blender\FlowCellButtons\README.md now acts as the tiny folder note that says wrappers live there while the real logic stays in the Blender add-on and shared bridge helpers stay in Blender\SupportScripts.
+README, docs\blender-buttons.md, and Blender\FlowCellButtons\README.md now use the same explicit Blender-button description text. That text explains Add Button as a Blender `.py` picker, describes single-action versus tool-set scripts, points at the live `...\scripts\addons\blender_layers_bridge\flowcell_actions.py` file as the Blender-side logic file, explains wrappers in Blender\FlowCellButtons, shows the click path through Invoke-BlenderFlowCellAction.ps1, and states that ScriptDump is private non-GitHub-updated storage.
 
 Top-level folders:
 - Blender: Blender integration files, including FlowCell button scripts, Blender support infrastructure, and a sanitized public config.

@@ -5,13 +5,23 @@ FlowCell is a Windows desktop automation shell for creative and system workflows
 
 This repository is structured for public source control. Publishable source stays in the repo. User state, bindings, popout layouts, saved panels, logs, generated temp files, private local settings, build output, and EXE artifacts live under `FlowCell/local/`, which is ignored by Git.
 
-## How Blender Buttons Work
+## How Blender buttons work
 
-Blender buttons in FlowCell are launcher buttons for Blender-side actions. The small `.ps1` file behind a FlowCell Blender button is only a wrapper. It points to one named action and sends that action through the FlowCell-to-Blender bridge.
-
-The real tool logic lives in the installed Blender add-on as Python. Shared bridge helpers live in `Blender/SupportScripts/`. User-facing wrappers live in `Blender/FlowCellButtons/`. Private runtime state such as layouts, logs, and local settings belongs in `FlowCell/local/`. Rough, old, or testing files belong in a `ScriptDump/` area instead of the normal button folders.
-
-When you add a Blender button from FlowCell, the intended flow is: install or register the Python action, create or update the wrapper, place the button in the selected FlowCell panel, and report whether Blender needs an add-on reload or full restart before the new action will work.
+When you click Add Button in the Blender tab, FlowCell asks for a Blender .py script.
+That script can be either:
+single action = one FlowCell button / one Blender function
+tool set = one script that defines multiple related FlowCell buttons/functions
+The script should be clean Blender Python, usually using bpy. It should run from the current scene, selection, or active object. It should not be a full Blender add-on, installer, Blender UI panel, Blender menu/button creator, modal tool, blocking popup workflow, or something that only works from Blender’s Text Editor.
+FlowCell copies the selected script’s code into this exact live Blender file:
+...\scripts\addons\blender_layers_bridge\flowcell_actions.py
+That file is the Python file Blender uses for FlowCell button logic. The inserted code becomes one or more named functions inside flowcell_actions.py, so Blender has real functions to run.
+FlowCell also creates matching .ps1 wrappers in:
+Blender\FlowCellButtons
+A wrapper is the FlowCell-side button launcher. One wrapper equals one FlowCell button. It stores the button description, shows where the Python function was inserted, and calls:
+Blender\SupportScripts\Invoke-BlenderFlowCellAction.ps1
+Click path:
+FlowCell button → .ps1 wrapper → Invoke-BlenderFlowCellAction.ps1 → flowcell_bridge.py → flowcell_actions.py → Blender runs the inserted function.
+ScriptDump is private storage for rough/testing/old/downloaded files and is not GitHub-updated.
 
 See [docs/blender-buttons.md](docs/blender-buttons.md) for the full Blender-button model and folder breakdown.
 
