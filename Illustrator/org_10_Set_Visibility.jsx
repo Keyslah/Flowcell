@@ -1,3 +1,4 @@
+// Description: Runs 10 Set Visibility.
 #target illustrator
 
 (function () {

@@ -1,4 +1,68 @@
-﻿param(
+# Description: Prompt for rename values and batch-rename the selected Blender objects through the FlowCell bridge.
+
+# Source Python File: C:\Users\aaron\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\flowcell_bridge.py
+
+# Source Action Function: perform_batch_rename_selected_objects
+# Source Action Start Line: 33
+
+# Source Action Logic:
+
+# def perform_batch_rename_selected_objects(
+#     context: bpy.types.Context,
+#     items: list[dict[str, str]],
+# ) -> str:
+#     selected_objects = list(context.selected_objects)
+#     if not selected_objects:
+#         raise ValueError("Select at least one object.")
+# 
+#     if not items:
+#         raise ValueError("No rename items were provided.")
+# 
+#     selected_by_name = {obj.name: obj for obj in selected_objects}
+#     rename_pairs: list[tuple[bpy.types.Object, str]] = []
+# 
+#     for entry in items:
+#         current_name = str(entry.get("current_name", "")).strip()
+#         new_name = str(entry.get("new_name", "")).strip()
+#         if not current_name:
+#             raise ValueError("Each rename item needs a current_name.")
+#         if not new_name:
+#             raise ValueError(f"New name is missing for '{current_name}'.")
+#         obj = selected_by_name.get(current_name)
+#         if obj is None:
+#             raise ValueError(f"'{current_name}' is no longer selected.")
+#         rename_pairs.append((obj, new_name))
+# 
+#     if len(rename_pairs) != len(selected_objects):
+#         raise ValueError("Rename list must include every selected object.")
+# 
+#     new_names = [new_name for _, new_name in rename_pairs]
+#     if len(set(new_names)) != len(new_names):
+#         raise ValueError("New names must be unique.")
+# 
+#     selected_name_set = {obj.name for obj in selected_objects}
+#     for _, new_name in rename_pairs:
+#         if new_name in selected_name_set:
+#             continue
+#         existing = bpy.data.objects.get(new_name)
+#         if existing is not None and existing not in selected_objects:
+#             raise ValueError(f"Another object already uses '{new_name}'.")
+# 
+#     temp_prefix = "__flowcell_collection_rename__"
+#     for index, (obj, _) in enumerate(rename_pairs, start=1):
+#         temp_name = f"{temp_prefix}{index}"
+#         while bpy.data.objects.get(temp_name) is not None:
+#             temp_name += "_x"
+#         obj.name = temp_name
+# 
+#     for obj, new_name in rename_pairs:
+#         obj.name = new_name
+# 
+#     return f"Renamed {len(rename_pairs)} object(s)."
+# 
+# 
+
+param(
     [string]$ConfigPath = '',
     [string]$StatusPath = ''
 )
@@ -508,6 +572,13 @@ catch {
     }
     exit 1
 }
+
+
+
+
+
+
+
 
 
 

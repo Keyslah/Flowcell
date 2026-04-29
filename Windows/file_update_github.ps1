@@ -1,3 +1,4 @@
+# Description: Runs update github.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 

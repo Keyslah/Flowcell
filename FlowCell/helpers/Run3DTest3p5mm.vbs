@@ -1,3 +1,4 @@
+' Description: Runs Run3DTest3p5mm.
 Dim shell
 Dim fso
 Dim root

@@ -1,3 +1,4 @@
+// Description: Runs 03 Restore Latest Snapshot.
 #target illustrator
 
 /*

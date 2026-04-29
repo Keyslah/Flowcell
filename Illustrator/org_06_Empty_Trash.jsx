@@ -1,3 +1,4 @@
+// Description: Runs 06 Empty Trash.
 #target illustrator
 
 /*

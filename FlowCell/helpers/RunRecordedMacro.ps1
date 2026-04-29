@@ -1,3 +1,4 @@
+# Description: Runs RunRecordedMacro.
 param(
     [Parameter(Mandatory = $true)]
     [string]$Label,

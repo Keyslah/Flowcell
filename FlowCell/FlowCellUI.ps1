@@ -1,4 +1,5 @@
-﻿Set-StrictMode -Version Latest
+# Description: Main FlowCell desktop shell for program tabs, panel tools, popouts, and script/macro execution.
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName PresentationFramework
@@ -341,6 +342,9 @@ $script:CachedOpusReservedStamp = ''
 $script:MacroLabProgramContext = ''
 $script:ProgramTabStrip = $null
 $script:ProgramTabStatus = $null
+$script:FlowCellMainHoverStatusText = $null
+$script:FlowCellMainHoverDelayMs = 2000
+$script:FlowCellMainHoverHintText = 'Hover over a button for 2 seconds to see what it does.'
 $script:State = $null
 $script:BackendStartedByUi = $false
 $script:DocumentPollTimer = $null
@@ -1632,6 +1636,37 @@ function Get-FlowCellBlenderScriptsFolder {
     return (Join-Path $script:FlowCellHomeRoot 'Blender\FlowCellButtons')
 }
 
+function Get-FlowCellBlenderSupportFolder {
+    return (Join-Path $script:FlowCellHomeRoot 'Blender\SupportScripts')
+}
+
+function Test-FlowCellPathUnderScriptDump([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+
+    try {
+        $currentPath = [System.IO.Path]::GetFullPath([string]$Path)
+    }
+    catch {
+        return $false
+    }
+
+    while (-not [string]::IsNullOrWhiteSpace($currentPath)) {
+        $leafName = Split-Path -Path $currentPath -Leaf
+        if ([string]$leafName -ieq 'ScriptDump') {
+            return $true
+        }
+
+        $parentPath = Split-Path -Path $currentPath -Parent
+        if ([string]::IsNullOrWhiteSpace($parentPath) -or $parentPath -eq $currentPath) {
+            break
+        }
+
+        $currentPath = $parentPath
+    }
+
+    return $false
+}
+
 function Test-FlowCellBlenderLegacyScriptPath([string]$Path) {
     if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
     $normalizedPath = Get-FlowCellNormalizedPath $Path
@@ -1667,6 +1702,129 @@ function Get-FlowCellDisplayButtonLabelFromPath([string]$Path) {
         }
     }
     return $label
+}
+
+function Get-FlowCellUniqueDestinationPath([string]$FolderPath, [string]$PreferredFileName) {
+    if ([string]::IsNullOrWhiteSpace($FolderPath) -or [string]::IsNullOrWhiteSpace($PreferredFileName)) {
+        return ''
+    }
+    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($PreferredFileName)
+    $extension = [System.IO.Path]::GetExtension($PreferredFileName)
+    if ([string]::IsNullOrWhiteSpace($baseName)) {
+        $baseName = 'button_script'
+    }
+    if ([string]::IsNullOrWhiteSpace($extension)) {
+        $extension = '.ps1'
+    }
+
+    $candidatePath = Join-Path $FolderPath ($baseName + $extension)
+    $suffix = 2
+    while (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
+        $candidatePath = Join-Path $FolderPath ('{0}_{1}{2}' -f $baseName, $suffix, $extension)
+        $suffix++
+    }
+    return $candidatePath
+}
+
+function Resolve-FlowCellButtonTargetPath($ProgramTab, [string]$SelectedPath) {
+    if ([string]::IsNullOrWhiteSpace($SelectedPath)) {
+        return [pscustomobject]@{
+            Succeeded = $false
+            Path = ''
+            Imported = $false
+            Message = 'No script path was selected.'
+        }
+    }
+
+    try {
+        $fullSelectedPath = [System.IO.Path]::GetFullPath([string]$SelectedPath)
+    }
+    catch {
+        return [pscustomobject]@{
+            Succeeded = $false
+            Path = ''
+            Imported = $false
+            Message = ('Invalid path: {0}' -f [string]$SelectedPath)
+        }
+    }
+
+    $programLabel = if ($ProgramTab -and $ProgramTab.PSObject.Properties['Label']) { [string]$ProgramTab.Label } else { '' }
+    $programKey = Get-ProgramLabelKey $programLabel
+    if ([string]$programKey -ne 'blender') {
+        return [pscustomobject]@{
+            Succeeded = $true
+            Path = $fullSelectedPath
+            Imported = $false
+            Message = ''
+        }
+    }
+
+    $managedFolder = Get-FlowCellBlenderScriptsFolder
+    if ([string]::IsNullOrWhiteSpace($managedFolder)) {
+        return [pscustomobject]@{
+            Succeeded = $true
+            Path = $fullSelectedPath
+            Imported = $false
+            Message = ''
+        }
+    }
+
+    try {
+        if (-not (Test-Path -LiteralPath $managedFolder -PathType Container)) {
+            New-Item -ItemType Directory -Path $managedFolder -Force | Out-Null
+        }
+    }
+    catch {
+        return [pscustomobject]@{
+            Succeeded = $false
+            Path = ''
+            Imported = $false
+            Message = ('Could not prepare Blender button folder: {0}' -f $_.Exception.Message)
+        }
+    }
+
+    $normalizedSelected = Get-FlowCellNormalizedPath $fullSelectedPath
+    $normalizedManaged = Get-FlowCellNormalizedPath $managedFolder
+    if ($normalizedSelected.StartsWith(($normalizedManaged + '\'))) {
+        return [pscustomobject]@{
+            Succeeded = $true
+            Path = $fullSelectedPath
+            Imported = $false
+            Message = ''
+        }
+    }
+
+    $fileName = [System.IO.Path]::GetFileName($fullSelectedPath)
+    if ([string]::IsNullOrWhiteSpace($fileName)) {
+        $fileName = 'button_script.ps1'
+    }
+    $destinationPath = Get-FlowCellUniqueDestinationPath -FolderPath $managedFolder -PreferredFileName $fileName
+    if ([string]::IsNullOrWhiteSpace($destinationPath)) {
+        return [pscustomobject]@{
+            Succeeded = $false
+            Path = ''
+            Imported = $false
+            Message = 'Could not resolve a destination path for the imported script.'
+        }
+    }
+
+    try {
+        Copy-Item -LiteralPath $fullSelectedPath -Destination $destinationPath -Force:$false
+        return [pscustomobject]@{
+            Succeeded = $true
+            Path = $destinationPath
+            Imported = $true
+            Message = ('Imported to {0}' -f $destinationPath)
+        }
+    }
+    catch {
+        return [pscustomobject]@{
+            Succeeded = $false
+            Path = ''
+            Imported = $false
+            Message = ('Failed to import script into FlowCell structure: {0}' -f $_.Exception.Message)
+        }
+    }
 }
 
 function Get-ProgramInitialScriptFolder($ProgramTab) {
@@ -8877,7 +9035,10 @@ function Initialize-FlowCellIllustratorManagedScriptsFolder {
     foreach ($sourceFolder in @($script:LegacyFlowCellIllustratorScriptsDir, $script:LegacyIllustratorScriptsDir)) {
         if ([string]::IsNullOrWhiteSpace([string]$sourceFolder) -or -not (Test-Path -LiteralPath $sourceFolder -PathType Container)) { continue }
         Get-ChildItem -LiteralPath $sourceFolder -File -ErrorAction SilentlyContinue |
-            Where-Object { @('.jsx', '.js') -contains ([string]$_.Extension).ToLowerInvariant() } |
+            Where-Object {
+                @('.jsx', '.js') -contains ([string]$_.Extension).ToLowerInvariant() -and
+                -not (Test-FlowCellPathUnderScriptDump -Path ([string]$_.FullName))
+            } |
             ForEach-Object {
                 try {
                     Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $managedFolder $_.Name) -Force
@@ -9052,16 +9213,29 @@ function Get-FlowCellExistingBlenderBridgeFolder {
 
 function Sync-FlowCellBlenderTemplateScripts([string]$TargetScriptFolder) {
     if ([string]::IsNullOrWhiteSpace($TargetScriptFolder)) { return }
-    $sourceFolder = Join-Path $script:FlowCellHomeRoot 'Blender\FlowCellButtons'
+    $sourceFolder = Get-FlowCellBlenderScriptsFolder
     if (-not (Test-Path -LiteralPath $sourceFolder -PathType Container)) {
         Write-UiLog ('Blender template script source folder was not found: {0}' -f $sourceFolder)
         return
     }
 
     Get-ChildItem -LiteralPath $sourceFolder -Filter '*.ps1' -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -ne 'Sync-BlenderButtonsToFlowCell.ps1' } |
+        Where-Object { -not (Test-FlowCellPathUnderScriptDump -Path ([string]$_.FullName)) } |
         ForEach-Object {
             Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $TargetScriptFolder $_.Name) -Force
+        }
+
+    $supportSourceFolder = Get-FlowCellBlenderSupportFolder
+    if (-not (Test-Path -LiteralPath $supportSourceFolder -PathType Container)) {
+        Write-UiLog ('Blender support script source folder was not found: {0}' -f $supportSourceFolder)
+        return
+    }
+
+    $supportTargetFolder = Ensure-FlowCellDirectory -Path (Join-Path (Split-Path -Parent $TargetScriptFolder) 'SupportScripts')
+    Get-ChildItem -LiteralPath $supportSourceFolder -Filter '*.ps1' -File -ErrorAction SilentlyContinue |
+        Where-Object { -not (Test-FlowCellPathUnderScriptDump -Path ([string]$_.FullName)) } |
+        ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $supportTargetFolder $_.Name) -Force
         }
 }
 
@@ -9767,6 +9941,29 @@ function Get-FlowCellWrapperAction([string]$ScriptPath) {
     return ''
 }
 
+function Get-FlowCellScriptTopDescription([string]$ScriptPath) {
+    if ([string]::IsNullOrWhiteSpace($ScriptPath)) { return '' }
+    if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) { return '' }
+
+    try {
+        $lines = @(Get-Content -LiteralPath $ScriptPath -TotalCount 20)
+        foreach ($line in $lines) {
+            $trimmed = [string]$line
+            if ([string]::IsNullOrWhiteSpace($trimmed)) { continue }
+            if ($trimmed -match "^(?:#|//|;|'|::|REM\s+)\s*Description\s*:\s*(.+)$") {
+                return [string]$matches[1].Trim()
+            }
+            if ($trimmed -notmatch "^(#|//|;|'|::|REM\s+)") {
+                break
+            }
+        }
+    }
+    catch {
+    }
+
+    return ''
+}
+
 function Resolve-FlowCellButtonTooltip($Button, $ProgramTab) {
     if ($Button -and $Button.PSObject.Properties['Tooltip'] -and -not [string]::IsNullOrWhiteSpace([string]$Button.Tooltip)) {
         return [string]$Button.Tooltip
@@ -9806,6 +10003,13 @@ function Resolve-FlowCellButtonTooltip($Button, $ProgramTab) {
         $action = @($script:Actions | Where-Object { [string]$_.Id -eq [string]$Button.Target } | Select-Object -First 1)
         if (@($action).Count -gt 0 -and $action[0].PSObject.Properties['Tooltip'] -and -not [string]::IsNullOrWhiteSpace([string]$action[0].Tooltip)) {
             return [string]$action[0].Tooltip
+        }
+    }
+
+    if ($Button -and [string]$Button.Kind -eq 'script' -and -not [string]::IsNullOrWhiteSpace([string]$Button.Target)) {
+        $topDescription = Get-FlowCellScriptTopDescription -ScriptPath ([string]$Button.Target)
+        if (-not [string]::IsNullOrWhiteSpace($topDescription)) {
+            return $topDescription
         }
     }
 
@@ -10515,6 +10719,16 @@ function New-FlowCellMainToolWrapper {
     $buttonId = [string]$Button.Id
     $isPoppedTarget = Test-FlowCellButtonPopoutTargetOpen -ProgramTabId $programTabId -PanelId $panelId -ButtonId $buttonId
     $isSelected = Is-FlowCellButtonSelected -ProgramTabId $programTabId -PanelId $panelId -ButtonId $buttonId
+    $trimmedTooltip = [string]$Tooltip
+    if (-not [string]::IsNullOrWhiteSpace($trimmedTooltip)) {
+        $trimmedTooltip = $trimmedTooltip.Trim()
+    }
+    $hoverStatusText = if ($script:FlowCellMainHoverStatusText -is [System.Windows.Controls.TextBlock]) { $script:FlowCellMainHoverStatusText } else { $null }
+    $hoverDelayMs = if ([int]$script:FlowCellMainHoverDelayMs -gt 0) { [int]$script:FlowCellMainHoverDelayMs } else { 2000 }
+    $hoverTimer = $null
+    $hoverPreviousText = ''
+    $hoverDisplayed = $false
+    $hoverMessage = $trimmedTooltip
 
     $wrapper = New-Object System.Windows.Controls.Border
     $wrapper.Margin = '0,0,12,12'
@@ -10559,7 +10773,7 @@ function New-FlowCellMainToolWrapper {
         $checkbox.Height = 20
         $checkbox.Margin = '0,3,6,0'
         $checkbox.VerticalAlignment = 'Top'
-        $checkbox.ToolTip = $Tooltip
+        $checkbox.ToolTip = $trimmedTooltip
         [System.Windows.Controls.ToolTipService]::SetShowOnDisabled($checkbox, $true)
         $checkbox.IsChecked = [bool]$isSelected
         $checkbox.IsEnabled = $true
@@ -10590,6 +10804,60 @@ function New-FlowCellMainToolWrapper {
         $Content.Opacity = if ($ArrangeModeEnabled) { 0.95 } else { 1.0 }
     }
     [void]$row.Children.Add($Content)
+
+    if (-not $ArrangeModeEnabled -and $hoverStatusText -and -not [string]::IsNullOrWhiteSpace($hoverMessage)) {
+        $hoverTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $hoverTimer.Interval = [TimeSpan]::FromMilliseconds($hoverDelayMs)
+        $hoverTimer.Add_Tick({
+            $hoverTimer.Stop()
+            if ($hoverStatusText) {
+                if ([string]::IsNullOrWhiteSpace($hoverPreviousText)) {
+                    $hoverPreviousText = [string]$hoverStatusText.Text
+                }
+                Set-ControlTextValue $hoverStatusText $hoverMessage
+                $hoverDisplayed = $true
+            }
+        }.GetNewClosure())
+
+        $startHoverDescription = {
+            param($sender, $eventArgs)
+            if ($null -eq $hoverTimer -or $null -eq $hoverStatusText) { return }
+            if ($hoverDisplayed) { return }
+            $hoverPreviousText = [string]$hoverStatusText.Text
+            $hoverTimer.Stop()
+            $hoverTimer.Start()
+        }.GetNewClosure()
+
+        $stopHoverDescription = {
+            param($sender, $eventArgs)
+            if ($hoverTimer) {
+                $hoverTimer.Stop()
+            }
+            if ($hoverDisplayed -and $hoverStatusText -and ([string]$hoverStatusText.Text -eq $hoverMessage)) {
+                if (-not [string]::IsNullOrWhiteSpace($hoverPreviousText)) {
+                    Set-ControlTextValue $hoverStatusText $hoverPreviousText
+                }
+                elseif (-not [string]::IsNullOrWhiteSpace([string]$script:FlowCellMainHoverHintText)) {
+                    Set-ControlTextValue $hoverStatusText ([string]$script:FlowCellMainHoverHintText)
+                }
+                else {
+                    Set-ControlTextValue $hoverStatusText ''
+                }
+            }
+            $hoverDisplayed = $false
+        }.GetNewClosure()
+
+        $wrapper.Add_MouseEnter($startHoverDescription)
+        $wrapper.Add_MouseLeave($stopHoverDescription)
+        if ($Content -is [System.Windows.UIElement]) {
+            $Content.Add_MouseEnter($startHoverDescription)
+            $Content.Add_MouseLeave($stopHoverDescription)
+        }
+        $wrapper.Add_Unloaded({
+            param($sender, $eventArgs)
+            if ($hoverTimer) { $hoverTimer.Stop() }
+        }.GetNewClosure())
+    }
 
     if ($ArrangeModeEnabled) {
         $dragSurface = New-Object System.Windows.Controls.Primitives.Thumb
@@ -12238,6 +12506,10 @@ function Start-Ui {
     $applyBindButton = $flowWindow.FindName('ApplyBindButton')
     $bindSelectionText = $flowWindow.FindName('BindSelectionText')
     $flowCellStatusText = $flowWindow.FindName('FlowCellStatusText')
+    $script:FlowCellMainHoverStatusText = $flowCellStatusText
+    if ($flowCellStatusText -and [string]::IsNullOrWhiteSpace([string]$flowCellStatusText.Text)) {
+        Set-ControlTextValue $flowCellStatusText ([string]$script:FlowCellMainHoverHintText)
+    }
     $addProgramButton = $flowWindow.FindName('AddProgramButton')
     $showBindsButton = $flowWindow.FindName('ShowBindsButton')
     $bindAreaScriptButton = $flowWindow.FindName('BindAreaScriptButton')
@@ -12253,6 +12525,7 @@ function Start-Ui {
     $loadLayoutButton = $flowWindow.FindName('LoadLayoutButton')
     $savePanelButton = $flowWindow.FindName('SavePanelButton')
     $loadPanelButton = $flowWindow.FindName('LoadPanelButton')
+    $bindScriptButton = $flowWindow.FindName('BindScriptButton')
     $script:__flowCellSuppressProgramSelection = $false
     $script:__flowCellSuppressPanelSelection = $false
     $script:FlowCellPopoutFirstStartupPending = Test-FlowCellStartupRestorePopoutsOnlyEnabled
@@ -12576,6 +12849,9 @@ function Start-Ui {
         $removePanelButton.IsEnabled = $hasPanel -and (@((& $getResolvedProgramState).Panels).Count -gt 1)
         if ($savePanelButton) { $savePanelButton.IsEnabled = $hasPanel }
         if ($loadPanelButton) { $loadPanelButton.IsEnabled = ($null -ne $programTab) }
+        if ($bindScriptButton) {
+            $bindScriptButton.Content = if ($programTab -and (Get-ProgramLabelKey ([string]$programTab.Label)) -eq 'blender') { 'Add Button' } else { 'Add Script' }
+        }
         if ($saveLayoutButton) { $saveLayoutButton.IsEnabled = $true }
         if ($loadLayoutButton) { $loadLayoutButton.IsEnabled = $true }
         $applyBindButton.IsEnabled = ($null -ne $script:FlowCellPendingShortcutBinding)
@@ -12757,9 +13033,16 @@ function Start-Ui {
         if ($null -eq $programTab -or $null -eq $programState -or $null -eq $panel) { return }
         $script:FlowCellState.SelectedProgramTabId = [int]$programTab.Id
         $programState.SelectedPanelId = [string]$panel.Id
+        $programKey = Get-ProgramLabelKey ([string]$programTab.Label)
         $dialog = New-Object Microsoft.Win32.OpenFileDialog
-        $dialog.Title = ('Choose {0} script' -f $programTab.Label)
-        $dialog.Filter = Get-ProgramScriptDialogFilter -ProgramReference $programTab
+        if ([string]$programKey -eq 'blender') {
+            $dialog.Title = ('Choose {0} button source (.py or .ps1)' -f $programTab.Label)
+            $dialog.Filter = 'Blender Button Sources (*.py;*.ps1)|*.py;*.ps1|All Files (*.*)|*.*'
+        }
+        else {
+            $dialog.Title = ('Choose {0} script' -f $programTab.Label)
+            $dialog.Filter = Get-ProgramScriptDialogFilter -ProgramReference $programTab
+        }
         $dialog.Multiselect = $true
         $initialDir = Get-ProgramInitialScriptFolder -ProgramTab $programTab
         if (Test-Path -LiteralPath $initialDir -PathType Container) { $dialog.InitialDirectory = $initialDir }
@@ -12767,22 +13050,94 @@ function Start-Ui {
         $selectedPaths = @($dialog.FileNames | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
         if (@($selectedPaths).Count -eq 0) { return }
         Set-ProgramLastScriptFolder -ProgramTab $programTab -FilePath ([string]$selectedPaths[0])
+
+        if ([string]$programKey -eq 'blender') {
+            $installerPath = Join-Path $script:FlowCellHomeRoot 'Blender\SupportScripts\Install-BlenderFlowCellButtons.ps1'
+            if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) {
+                & $setStatus ('Blender Add Button installer script was not found: {0}' -f $installerPath)
+                return
+            }
+
+            $installResultJson = & $installerPath -SelectedPaths $selectedPaths -PanelName ([string]$panel.Name)
+            $installResult = $null
+            try {
+                $installResult = $installResultJson | ConvertFrom-Json
+            }
+            catch {
+                Write-UiLog ('Blender Add Button installer returned invalid JSON. Output={0}' -f [string]$installResultJson)
+                & $setStatus 'Blender Add Button installer returned invalid output. Check logs.'
+                return
+            }
+
+            $script:State = Read-State
+            $script:FlowCellState = Read-FlowCellState
+            Sync-FlowCellButtonsFromBindings
+            Save-State
+            Save-FlowCellState
+            & $refreshAll
+
+            $installedCount = if ($installResult.PSObject.Properties['InstalledCount']) { [int]$installResult.InstalledCount } else { 0 }
+            $failedCount = if ($installResult.PSObject.Properties['FailedCount']) { [int]$installResult.FailedCount } else { 0 }
+            $reloadRequired = ($installResult.PSObject.Properties['ReloadRequired'] -and [bool]$installResult.ReloadRequired)
+            $reloadReason = if ($installResult.PSObject.Properties['ReloadReason']) { [string]$installResult.ReloadReason } else { '' }
+            Write-UiLog ('Blender Add Button install finished. Panel={0}; Installed={1}; Failed={2}; ReloadRequired={3}' -f [string]$panel.Name, $installedCount, $failedCount, $reloadRequired)
+
+            if ($installedCount -le 0) {
+                & $setStatus 'No Blender buttons were installed. Check logs for skipped files.'
+                return
+            }
+
+            if ($reloadRequired -and -not [string]::IsNullOrWhiteSpace($reloadReason)) {
+                & $setStatus ('Installed {0} Blender button(s) on {1}. {2}' -f $installedCount, [string]$panel.Name, $reloadReason)
+            }
+            elseif ($reloadRequired) {
+                & $setStatus ('Installed {0} Blender button(s) on {1}. Reload the Blender addon or restart Blender before first use.' -f $installedCount, [string]$panel.Name)
+            }
+            elseif ($failedCount -gt 0) {
+                & $setStatus ('Installed {0} Blender button(s) on {1}. Skipped {2} file(s).' -f $installedCount, [string]$panel.Name, $failedCount)
+            }
+            else {
+                & $setStatus ('Installed {0} Blender button(s) on {1}. Action list synced.' -f $installedCount, [string]$panel.Name)
+            }
+            return
+        }
+
+        $addedCount = 0
+        $importedCount = 0
         foreach ($selectedPath in @($selectedPaths)) {
+            $targetResolution = Resolve-FlowCellButtonTargetPath -ProgramTab $programTab -SelectedPath ([string]$selectedPath)
+            if (-not [bool]$targetResolution.Succeeded -or [string]::IsNullOrWhiteSpace([string]$targetResolution.Path)) {
+                Write-UiLog ('Skipped script button import. ProgramTabId={0}; PanelId={1}; Source={2}; Reason={3}' -f $programTab.Id, $panel.Id, [string]$selectedPath, [string]$targetResolution.Message)
+                continue
+            }
+            if ([bool]$targetResolution.Imported) {
+                $importedCount++
+            }
             $buttonId = 'button_{0}' -f [guid]::NewGuid().ToString('N')
             $panel.Buttons += [pscustomobject]@{
                 Id = $buttonId
                 Kind = 'script'
-                Label = Get-FlowCellDisplayButtonLabelFromPath -Path ([string]$selectedPath)
-                Target = [string]$selectedPath
+                Label = Get-FlowCellDisplayButtonLabelFromPath -Path ([string]$targetResolution.Path)
+                Target = [string]$targetResolution.Path
                 Shortcut = ''
                 BindingId = 0
             }
+            $addedCount++
+        }
+        if ($addedCount -le 0) {
+            & $setStatus 'No buttons were added. Check logs for skipped files.'
+            return
         }
         Save-State
-        Write-UiLog ('Added FlowCell script button(s). ProgramTabId={0}; PanelId={1}; Count={2}' -f $programTab.Id, $panel.Id, @($selectedPaths).Count)
+        Write-UiLog ('Added FlowCell script button(s). ProgramTabId={0}; PanelId={1}; Count={2}; Imported={3}' -f $programTab.Id, $panel.Id, $addedCount, $importedCount)
         & $refreshAll
-        $buttonWord = if (@($selectedPaths).Count -eq 1) { 'button' } else { 'buttons' }
-        & $setStatus ('Added {0} script {1} to {2}.' -f @($selectedPaths).Count, $buttonWord, $panel.Name)
+        $buttonWord = if ($addedCount -eq 1) { 'button' } else { 'buttons' }
+        if ($importedCount -gt 0) {
+            & $setStatus ('Added {0} {1} to {2}. Imported {3} file(s) into Blender\\FlowCellButtons.' -f $addedCount, $buttonWord, $panel.Name, $importedCount)
+        }
+        else {
+            & $setStatus ('Added {0} script {1} to {2}.' -f $addedCount, $buttonWord, $panel.Name)
+        }
     })
     $flowWindow.FindName('BindMacroButton').Add_Click({
         $programTab = & $getResolvedProgramTab

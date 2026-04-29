@@ -1,3 +1,4 @@
+' Description: Runs run backend hidden.
 Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set wmi = GetObject("winmgmts:\\.\root\cimv2")

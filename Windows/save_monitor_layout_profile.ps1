@@ -1,3 +1,4 @@
+# Description: Runs save monitor layout profile.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 

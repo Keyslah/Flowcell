@@ -1,3 +1,4 @@
+// Description: Runs 19 Prepare Selected Litho PNG.
 #target illustrator
 
 (function () {

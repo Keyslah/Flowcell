@@ -1,3 +1,4 @@
+// Description: Runs 01 Save Snapshot.
 #target illustrator
 
 /*

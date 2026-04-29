@@ -1,3 +1,4 @@
+// Description: Runs 11 Baseline Lock.
 #target illustrator
 
 (function () {

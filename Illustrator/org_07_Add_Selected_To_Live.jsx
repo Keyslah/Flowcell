@@ -1,3 +1,4 @@
+// Description: Runs 07 Add Selected To Live.
 #target illustrator
 
 /*

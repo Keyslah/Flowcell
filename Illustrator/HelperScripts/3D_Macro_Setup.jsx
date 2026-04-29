@@ -1,3 +1,4 @@
+// Description: Runs 3D Macro Setup.
 #target illustrator
 
 /*

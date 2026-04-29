@@ -1,3 +1,4 @@
+// Description: Runs 3D Macro Select P2.
 #target illustrator
 
 (function () {

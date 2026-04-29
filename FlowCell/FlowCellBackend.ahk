@@ -1,3 +1,4 @@
+; Description: Runs FlowCellBackend.
 #Requires AutoHotkey v2.0
 #SingleInstance Off
 

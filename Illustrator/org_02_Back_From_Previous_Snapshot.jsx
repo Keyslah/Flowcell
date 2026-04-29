@@ -1,3 +1,4 @@
+// Description: Runs 02 Back From Previous Snapshot.
 #target illustrator
 
 /*

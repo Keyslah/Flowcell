@@ -1,3 +1,4 @@
+// Description: Runs 17 Save Selected PNG By Sublayer.
 #target illustrator
 
 (function () {

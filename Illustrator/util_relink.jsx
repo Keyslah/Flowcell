@@ -1,3 +1,4 @@
+// Description: Runs relink.
 #target illustrator
 
 /*

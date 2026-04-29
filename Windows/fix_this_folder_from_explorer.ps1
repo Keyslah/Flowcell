@@ -1,4 +1,5 @@
-﻿$ErrorActionPreference = 'Stop'
+# Description: Runs fix this folder from explorer.
+$ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 Add-Type -AssemblyName System.Windows.Forms

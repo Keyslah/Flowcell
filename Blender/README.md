@@ -2,7 +2,8 @@
 
 Blender keeps its current structured integration area.
 
-- `FlowCellButtons/`: FlowCell-facing Blender wrappers and sync scripts.
+- `FlowCellButtons/`: user-facing FlowCell Blender button scripts only.
+- `SupportScripts/`: Blender support infrastructure such as the dispatcher and sync/regeneration scripts.
 - `config.json`: sanitized public default Blender config.
 - `FlowCell/local/private/blender.config.local.json`: local override for machine-specific bridge paths.
 

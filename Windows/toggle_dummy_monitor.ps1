@@ -1,3 +1,4 @@
+# Description: Runs toggle dummy monitor.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 

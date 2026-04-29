@@ -1,3 +1,4 @@
+# Description: Runs fix explorer sort.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 

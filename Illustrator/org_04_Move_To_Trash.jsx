@@ -1,3 +1,4 @@
+// Description: Runs 04 Move To Trash.
 #target illustrator
 
 /*

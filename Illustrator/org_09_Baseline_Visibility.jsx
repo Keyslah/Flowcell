@@ -1,3 +1,4 @@
+// Description: Runs 09 Baseline Visibility.
 #target illustrator
 
 (function () {

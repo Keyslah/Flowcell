@@ -1,3 +1,4 @@
+# Description: Runs set active monitor layout profile dialog.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 

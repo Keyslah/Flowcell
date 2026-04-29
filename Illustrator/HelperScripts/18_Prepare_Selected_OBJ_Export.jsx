@@ -1,3 +1,4 @@
+// Description: Runs 18 Prepare Selected OBJ Export.
 #target illustrator
 
 (function () {

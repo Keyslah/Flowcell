@@ -1,3 +1,4 @@
+// Description: Runs delete sublayer.
 #target illustrator
 
 /*

@@ -85,7 +85,7 @@
     },
     {
       "label": "sort",
-      "tooltip": "Run the Blender sort action inside the open Blender session.",
+      "tooltip": "Sort by visibility: visible objects become Live, matching invisible family objects become Snapshots as s#, and other invisible objects become Trash as t#.",
       "action": "sort"
     },
     {

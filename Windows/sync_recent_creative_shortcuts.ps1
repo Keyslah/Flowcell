@@ -1,3 +1,4 @@
+# Description: Runs sync recent creative shortcuts.
 param(
     [switch]$Once,
     [int]$WaitSeconds = 5

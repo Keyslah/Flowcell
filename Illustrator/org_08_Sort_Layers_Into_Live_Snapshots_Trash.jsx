@@ -1,3 +1,4 @@
+// Description: Runs 08 Sort Layers Into Live Snapshots Trash.
 #target illustrator
 
 /*

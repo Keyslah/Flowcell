@@ -1,3 +1,4 @@
+// Description: Runs 00 new sub layer.
 #target illustrator
 
 (function () {

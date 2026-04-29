@@ -1,3 +1,4 @@
+# Description: Runs Restore FlowCellWindow.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 

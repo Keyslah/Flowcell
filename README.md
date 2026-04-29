@@ -5,45 +5,39 @@ FlowCell is a Windows desktop automation shell for creative and system workflows
 
 This repository is structured for public source control. Publishable source stays in the repo. User state, bindings, popout layouts, saved panels, logs, generated temp files, private local settings, build output, and EXE artifacts live under `FlowCell/local/`, which is ignored by Git.
 
+## How Blender Buttons Work
+
+Blender buttons in FlowCell are launcher buttons for Blender-side actions. The small `.ps1` file behind a FlowCell Blender button is only a wrapper. It points to one named action and sends that action through the FlowCell-to-Blender bridge.
+
+The real tool logic lives in the installed Blender add-on as Python. Shared bridge helpers live in `Blender/SupportScripts/`. User-facing wrappers live in `Blender/FlowCellButtons/`. Private runtime state such as layouts, logs, and local settings belongs in `FlowCell/local/`. Rough, old, or testing files belong in a `ScriptDump/` area instead of the normal button folders.
+
+When you add a Blender button from FlowCell, the intended flow is: install or register the Python action, create or update the wrapper, place the button in the selected FlowCell panel, and report whether Blender needs an add-on reload or full restart before the new action will work.
+
+See [docs/blender-buttons.md](docs/blender-buttons.md) for the full Blender-button model and folder breakdown.
 
 ## Script Folder Rules
 
 - Blender FlowCell button wrappers belong in `Blender/FlowCellButtons/`.
+- Blender bridge helper scripts belong in `Blender/SupportScripts/`.
 - Illustrator user-facing scripts stay directly in `Illustrator/`.
 - Windows user-facing scripts stay directly in `Windows/`.
 - Photoshop repo-safe public scripts stay in `Photoshop/`.
 - Preferred filename prefixes are `file_`, `util_`, and `org_`.
 - These prefixes are only a file-organization convention. They do not route scripts to panels or change execution behavior.
 - `Illustrator/HelperScripts/` is reserved for internal helper scripts.
+- `ScriptDump/` folders are for rough, old, downloaded, or testing files that should not be treated as normal FlowCell button candidates.
 
 Preferred usage:
 - `org_` for organization actions such as Illustrator layer tools or Blender collection tools
 - `file_` for file-oriented scripts
 - `util_` for utility scripts
 
-When a script is added through FlowCell's panel UI, the `Add Script` button opens in the current program folder, supports multi-select, adds one button per selected script, and writes those buttons only into the currently selected panel. Default button labels strip `file_`, `util_`, or `org_` from the displayed name only.
-
-## Script Folder Rules
-
-- Blender FlowCell button wrappers belong in `Blender/FlowCellButtons/`.
-- Illustrator user-facing scripts stay directly in `Illustrator/`.
-- Windows user-facing scripts stay directly in `Windows/`.
-- Photoshop repo-safe public scripts stay in `Photoshop/`.
-- Preferred filename prefixes are `file_`, `util_`, and `org_`.
-- These prefixes are only a file-organization convention. They do not route scripts to panels or change execution behavior.
-- `Illustrator/HelperScripts/` is reserved for internal helper scripts.
-
-Preferred usage:
-- `org_` for organization actions such as Illustrator layer tools or Blender collection tools
-- `file_` for file-oriented scripts
-- `util_` for utility scripts
-
-When a script is added through FlowCell's panel UI, the `Add Script` button opens in the current program folder, supports multi-select, adds one button per selected script, and writes those buttons only into the currently selected panel. Default button labels strip `file_`, `util_`, or `org_` from the displayed name only.
+When a script is added through FlowCell's panel UI, the normal `Add Script` button opens in the current program folder, supports multi-select, adds one button per selected script, and writes those buttons only into the currently selected panel. On the Blender tab, `Add Button` is more than a file picker: it installs or registers the Blender-side action, creates or updates the wrapper in `Blender/FlowCellButtons/`, adds the button to the selected panel, and reports whether Blender must reload or restart before first use.
 
 ## Repository Layout
 
 - `FlowCell/`: main app code, launcher scripts, helpers, vendored dependencies, and ignored local runtime storage under `FlowCell/local/`.
-- `Blender/`: Blender integration files, including `FlowCellButtons/` and the tracked public `config.json`.
+- `Blender/`: Blender integration files, including `FlowCellButtons/`, `SupportScripts/`, `ManagedActions/`, and the tracked public `config.json`.
 - `Illustrator/`: user-facing Illustrator scripts.
 - `Illustrator/HelperScripts/`: internal Illustrator helper scripts that are not meant to become user-facing buttons.
 - `Windows/`: user-facing Windows scripts.

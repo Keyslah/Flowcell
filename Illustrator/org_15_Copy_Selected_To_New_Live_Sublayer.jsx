@@ -1,3 +1,4 @@
+// Description: Runs 15 Copy Selected To New Live Sublayer.
 #target illustrator
 
 (function () {

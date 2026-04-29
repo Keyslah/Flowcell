@@ -1,5 +1,5 @@
 FlowCell Program Summary
-Last updated: 2026-04-28
+Last updated: 2026-04-29
 
 Maintenance rule
 ----------------
@@ -25,9 +25,12 @@ The repository is now arranged for public GitHub use. Tracked source, docs, exam
 FlowCell also now includes donation support through .github\FUNDING.yml, a README support badge link, and a Stripe Payment Link.
 Contributor guidance now explicitly requires relative repo-path resolution instead of tracked machine-specific absolute paths.
 README and contributor docs now lead with script folder rules, explicitly point Blender submissions to Blender\FlowCellButtons, and direct contributors toward GitHub Issues for bugs and GitHub Discussions for questions or early script proposals.
+README now includes a short "How Blender buttons work" section near the top that explains wrappers vs. real Blender add-on logic, points readers at Blender\SupportScripts and FlowCell\local, and links to docs\blender-buttons.md for the deeper explanation.
+docs\blender-buttons.md now serves as the detailed Blender-button guide, covering wrapper/add-on/bridge roles, expected folder ownership, the Add Button install flow, and Blender reload expectations.
+Blender\FlowCellButtons\README.md now acts as the tiny folder note that says wrappers live there while the real logic stays in the Blender add-on and shared bridge helpers stay in Blender\SupportScripts.
 
 Top-level folders:
-- Blender: Blender integration files, including FlowCell button wrappers and a sanitized public config.
+- Blender: Blender integration files, including FlowCell button scripts, Blender support infrastructure, and a sanitized public config.
 - FlowCell: the main desktop app, helper scripts, vendored dependencies, and ignored local runtime storage.
 - Illustrator: public Illustrator script area.
 - Illustrator\random: imported Illustrator script packs currently kept in-repo for evaluation/reference.
@@ -72,8 +75,14 @@ This change ensures existing panel configuration, hotkeys, bindings, popout layo
 
 Program folder rules
 --------------------
-Blender FlowCell button wrappers belong in:
+Blender FlowCell button scripts belong in:
 - Blender\FlowCellButtons
+
+Blender support scripts belong in:
+- Blender\SupportScripts
+
+Managed Blender action source files belong in:
+- Blender\ManagedActions
 
 Illustrator and Windows user-facing scripts are now expected directly inside their program folder:
 - Illustrator\*.jsx and Illustrator\*.js
@@ -81,6 +90,18 @@ Illustrator and Windows user-facing scripts are now expected directly inside the
 
 Imported reference packs can also exist under:
 - Illustrator\random
+
+ScriptDump folders are reserved for loose, unfinished, downloaded, old, or experimental scripts and wrappers that should not be treated as normal FlowCell button candidates:
+- Illustrator\ScriptDump
+- Photoshop\ScriptDump
+- Windows\ScriptDump
+- Blender\ScriptDump
+- Blender\FlowCellButtons\ScriptDump
+
+Each ScriptDump folder uses only these standard subfolders:
+- Downloaded
+- Testing
+- OldVersions
 
 Photoshop repo-safe public scripts belong in:
 - Photoshop\*
@@ -100,6 +121,12 @@ Preferred usage:
 - file_ for file-oriented scripts
 - util_ for utility-style scripts
 
+Script header rule:
+- FlowCell-managed scripts in `FlowCell`, `Blender\FlowCellButtons`, `Windows`, and `Illustrator` now use a one-line `Description:` comment at the top of each script file.
+- FlowCell UI reads this top description to populate concise button help text.
+- `Blender\FlowCellButtons\org_snapshot.ps1` now explicitly describes snapshot behavior (copy selected Live objects into Snapshots as versioned `s#` duplicates) instead of a generic placeholder description.
+- All scripts in `Blender\FlowCellButtons` now use action-accurate top descriptions that match their real behavior (bridge action, utility action, or full script behavior) instead of generic `Runs ...` placeholders.
+
 GitHub collaboration guidance
 -----------------------------
 - GitHub Issues are for bugs, regressions, broken scripts, and concrete feature requests.
@@ -114,13 +141,23 @@ The main FlowCell panel Add Script button now:
 - allows selecting multiple scripts at once
 - creates one button per selected script
 - adds those buttons only to the currently selected panel
+- for Blender program tabs, imported files selected outside `Blender\FlowCellButtons` are now automatically copied into `Blender\FlowCellButtons` first so the button target stays inside FlowCell's managed structure
+- on Blender tabs, this control is labeled `Add Button` to match the one-click button workflow
+- on Blender tabs, `Add Button` now runs a real installer flow for `.py` and `.ps1` selections: install/register a Blender bridge action, create or update a bridge wrapper in `Blender\FlowCellButtons`, add the new button to the currently selected FlowCell panel, and sync the Blender button list back into FlowCell state/layout files
+- Blender `Add Button` now reports when Blender must reload the add-on or restart before a newly installed action is callable
 
 Default button labels come from the filename with any leading file_, util_, or org_ prefix removed for display only.
 
 For the built-in Blender tab, Add Script now roots to:
 - Blender\FlowCellButtons
+- Blender\SupportScripts
 
-Legacy Blender add-on folders and the old repo-root Blender folder are treated as stale local paths and migrated forward to Blender\FlowCellButtons.
+Legacy Blender add-on folders and the old repo-root Blender folder are treated as stale local paths and migrated forward to Blender\FlowCellButtons for button scripts.
+
+ScriptDump behavior:
+- normal default folder opening stays on the current program's main script folder
+- manual navigation into a ScriptDump folder is still possible through the normal file picker
+- FlowCell ignores scripts inside folders named exactly ScriptDump during normal button discovery, sync, and script-template setup paths
 
 Startup and launcher model
 --------------------------
@@ -150,6 +187,7 @@ FlowCellUI.ps1 provides:
 - program-template setup for Illustrator, Blender, Photoshop, Windows, and generic apps
 - a startup checkbox that controls whether FlowCell launches minimized and restores the last pop-out-only layout
 - right-click rename and delete actions on the top program tiles
+- delayed main-page hover help: when the pointer stays over a tool tile for about 2 seconds, FlowCell shows that button's concise description in the main status line
 
 Shortcut display note:
 - Bind Viewer, the shortcut picker list, the bind-area shortcut dropdown, and the macro/program shortcut readouts now translate internal AutoHotkey-style tokens into readable labels such as `Ctrl + Alt + K` while keeping the stored bind format unchanged.
@@ -183,15 +221,24 @@ Blender integration
 -------------------
 Blender remains structured around:
 
-- Blender\FlowCellButtons\Invoke-BlenderFlowCellAction.ps1
-- Blender\FlowCellButtons\Sync-BlenderButtonsToFlowCell.ps1
-- Blender\FlowCellButtons\org_*.ps1 wrappers for collections-style actions
-- Blender\FlowCellButtons\file_*.ps1 wrappers for file-style actions
-- Blender\FlowCellButtons\util_*.ps1 wrappers for utility-style actions
+- Blender\SupportScripts\Invoke-BlenderFlowCellAction.ps1 as the dispatcher support script
+- Blender\SupportScripts\Sync-BlenderButtonsToFlowCell.ps1 as the sync/regeneration support script
+- Blender\FlowCellButtons\org_*.ps1 user-facing button scripts for collections-style actions
+- Blender\FlowCellButtons\file_*.ps1 user-facing button scripts for file-style actions
+- Blender\FlowCellButtons\util_*.ps1 user-facing button scripts for utility-style actions
 - Blender\config.json as the sanitized public default config
 - FlowCell\local\private\blender.config.local.json as the machine-specific override for live bridge paths
 
-Generated Blender wrapper scripts resolve the dispatcher relative to their own folder instead of hardcoding a machine-local repo path.
+Generated Blender button scripts resolve the dispatcher from a sibling SupportScripts folder instead of hardcoding a machine-local repo path.
+Normal button discovery and Blender template setup must not treat Invoke-BlenderFlowCellAction.ps1 or Sync-BlenderButtonsToFlowCell.ps1 as user-facing button scripts.
+The installed Blender addon runtime file `flowcell_actions.py` now identifies itself as `Blender Organizer` and includes a top-of-file button reference block that documents each button's behavior in concise terms.
+Blender FlowCell button descriptions now avoid generic placeholders and include explicit behavior details (for example, `sort` now documents visible-to-Live, matching invisible-to-Snapshots `s#`, and remaining invisible-to-Trash `t#` behavior).
+Blender wrapper scripts now consistently resolve the dispatcher from `Blender\SupportScripts\Invoke-BlenderFlowCellAction.ps1`, including `file_cura.ps1`, `file_orca.ps1`, and `util_cursor_center_hole.ps1`.
+Blender `Add Button` installs custom action scripts into `Blender\ManagedActions` and registers them through `blender_layers_bridge\flowcell_custom_actions.json` under the live Blender add-ons path.
+The Blender bridge runtime (`flowcell_bridge.py` and `flowcell_actions.py` in the Blender add-ons folder) now supports executing registered custom actions by action id from that registry.
+Every wrapper in `Blender\FlowCellButtons` now starts with a `Description:` line plus a source map (`Source Python File`, action/function, and start line) followed by a commented copy of the real Python logic, while still dispatching through `Blender\SupportScripts\Invoke-BlenderFlowCellAction.ps1`.
+`Sync-BlenderButtonsToFlowCell.ps1` now preserves and regenerates that wrapper metadata block for built-in Blender action wrappers, including blank-line spacing between the description, source-map fields, and commented Python logic.
+Built-in Blender action wrappers and the live Blender config now prefer an authoritative action-description map during install/sync, so stale generic tooltips like `Run the Blender sort action...` are replaced with behavior-specific text in both wrapper headers and launcher metadata.
 
 The public example for Blender config now belongs in:
 - examples\Blender\config.example.json
@@ -247,7 +294,8 @@ Current maintenance expectations
 --------------------------------
 - Keep public source in tracked repo folders.
 - Keep mutable runtime data in FlowCell\local.
-- Keep Blender FlowCell button wrappers in Blender\FlowCellButtons.
+- Keep Blender FlowCell button scripts in Blender\FlowCellButtons only.
+- Keep Blender support scripts in Blender\SupportScripts.
 - Keep Illustrator and Windows user-facing scripts directly in their program folder.
 - Keep Photoshop repo-safe public scripts directly in Photoshop.
 - Keep Illustrator\HelperScripts for internal non-button helper scripts.

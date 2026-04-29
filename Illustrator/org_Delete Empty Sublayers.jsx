@@ -1,3 +1,4 @@
+// Description: Runs Delete Empty Sublayers.
 #target illustrator
 
 (function () {

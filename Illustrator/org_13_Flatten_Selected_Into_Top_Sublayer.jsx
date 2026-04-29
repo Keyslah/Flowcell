@@ -1,3 +1,4 @@
+// Description: Runs 13 Flatten Selected Into Top Sublayer.
 #target illustrator
 
 /*

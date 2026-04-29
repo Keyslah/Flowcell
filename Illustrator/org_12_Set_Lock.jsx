@@ -1,3 +1,4 @@
+// Description: Runs 12 Set Lock.
 #target illustrator
 
 (function () {

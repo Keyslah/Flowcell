@@ -1,3 +1,4 @@
+# Description: Runs DummyMonitorHelpers.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
