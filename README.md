@@ -69,6 +69,8 @@ Some Windows helper scripts also use local environment overrides for machine-spe
 - `run.cmd` at the repo root delegates to `FlowCell/run.cmd`.
 - `FlowCell/run.cmd` launches the PowerShell UI or the AutoHotkey backend.
 - Launcher logs are written to `FlowCell/local/logs/`.
+- For the backend, `FlowCell/run.cmd` now looks for AutoHotkey v2 in bundled release runtime paths first, then local user runtime paths, then system install paths.
+- User-facing release ZIPs should include AutoHotkey v2 as `FlowCell/runtime/AutoHotkey64.exe` so most users do not need a separate AutoHotkey install.
 
 ## Issues and Discussions
 
@@ -83,3 +85,5 @@ Some Windows helper scripts also use local environment overrides for machine-spe
 ## Releases
 
 This repository does not commit built EXEs. The optional launcher source is kept in `tools/launcher/FlowCellLauncher.cs`. Build outputs belong in ignored local storage during development and should be distributed later through GitHub Releases.
+
+For normal user-facing releases, include a portable AutoHotkey v2 runtime in `FlowCell/runtime/AutoHotkey64.exe`. Source checkouts can also place that runtime in `FlowCell/local/bin/`, or use a normal system install at `C:/Program Files/AutoHotkey/v2/`.
