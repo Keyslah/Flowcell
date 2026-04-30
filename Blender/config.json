@@ -1,4 +1,4 @@
-﻿{
+{
   "automation": {
     "bridgeFolder": "",
     "responseTimeoutSeconds": 20
@@ -46,6 +46,12 @@
       "label": "flatten revolve",
       "tooltip": "Flatten the active mesh into a centered profile, hide the source object, and revolve the profile in place.",
       "scriptPath": ".\\FlowCellButtons\\util_flatten_revolve_tools.ps1",
+      "panel": "utility"
+    },
+    {
+      "label": "Smart Axis Lock",
+      "tooltip": "Open Smart Axis Lock controls for Baseline, Live, and X/Y/Z side toggles.",
+      "scriptPath": ".\\FlowCellButtons\\util_smart_axis_lock.ps1",
       "panel": "utility"
     },
     {
@@ -152,4 +158,3 @@
     }
   ]
 }
-
