@@ -25,7 +25,7 @@ The repository is now arranged for public GitHub use. Tracked source, docs, exam
 FlowCell also now includes donation support through .github\FUNDING.yml, a README support badge link, and a Stripe Payment Link.
 Contributor guidance now explicitly requires relative repo-path resolution instead of tracked machine-specific absolute paths.
 README and contributor docs now lead with script folder rules, explicitly point Blender submissions to Blender\FlowCellButtons, and direct contributors toward GitHub Issues for bugs and GitHub Discussions for questions or early script proposals.
-README now puts the Blender-button docs link and Codex prompt guidance directly in the Blender section so the right conversion prompt is the first thing users see.
+README now keeps the `How Blender buttons work` section short and direct: it points to the Codex prompt doc first, then gives only the core script requirements and valid-file outcome.
 docs\blender-buttons.md is now intentionally short: it starts with the Codex conversion prompt, then keeps only a compact contract, Add Button flow, and main path list.
 That Blender-button doc still covers FlowCell-root paths only, including FlowCellButtons, SupportScripts, ManagedActions, config files, Blender runtime filenames, and ScriptDump locations without embedding personal machine paths.
 That Blender-button doc still explicitly states that FlowCell copies the selected script's code into the live Blender file `...\scripts\addons\blender_bridge\flowcell_actions.py`.

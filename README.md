@@ -1,42 +1,34 @@
 Support FlowCell: [![Donate via Stripe](https://img.shields.io/badge/Donate-Stripe-635BFF?logo=stripe&logoColor=white)](https://buy.stripe.com/aFa3cw2rF5fR7xyauo8AE01)
 # FlowCell
 
-FlowCell is a Windows desktop automation shell for creative and system workflows. It uses a PowerShell WPF UI and an AutoHotkey v2 backend to manage program tabs, editable panels, launcher buttons, hotkeys, macros, popout layouts, and Blender bridge actions.
+FlowCell is a Windows desktop automation shell for workflows. It uses a PowerShell WPF UI and an AutoHotkey v2 backend to manage program Scripts, hotkeys, and macros.
+
+When a script is added through FlowCell's panel UI, the normal Add Script button opens in the current program folder, supports multi-select, adds one button per selected script, and writes those buttons only into the currently selected panel. 
+
+On the Blender tab, Add Button installs or registers the Blender-side action, creates or updates the wrapper in Blender/FlowCellButtons/, adds the button to the selected panel, and reports whether Blender must reload or restart before first use.
+
+Preferred script prefix:
+- `org_` for organization actions such as Illustrator layer tools or Blender collection tools
+- `file_` for file-oriented scripts
+- `util_` for utility scripts
 
 This repository is structured for public source control. Publishable source stays in the repo. User state, bindings, popout layouts, saved panels, logs, generated temp files, private local settings, build output, and EXE artifacts live under `FlowCell/local/`, which is ignored by Git.
 
 ## How Blender buttons work
 
-When you click Add Button in the Blender tab, FlowCell asks for a Blender `.py` script.
+When you click `Add Button` in the Blender tab, FlowCell asks for one Blender `.py` script.
 
-Use the Codex prompt at the top of [docs/blender-buttons.md](docs/blender-buttons.md) when you want Codex to convert a Blender tool into a FlowCell-ready button script.
+Use the Codex prompt at the top of [docs/blender-buttons.md](docs/blender-buttons.md) when you want Codex to convert a Blender tool into a FlowCell-ready button.
 
-The short version:
+A valid Blender button script should:
 
-- give FlowCell one normal Blender Python file, not a full add-on package
+- be normal Blender Python, usually using `bpy`
 - expose `run_flowcell_action`, `main`, or `perform_*`
 - preserve the real interaction model, including prompts like file pickers when the source tool needs them
 
-If the script is valid, FlowCell installs the Blender-side action, creates the matching wrapper in `Blender/FlowCellButtons/`, adds the button to the selected panel, and tells you whether Blender needs a reload or restart.
+Do not give FlowCell a full add-on package, installer, background listener, or Text Editor-only script.
 
-## Script Folder Rules
-
-- Blender FlowCell button wrappers belong in `Blender/FlowCellButtons/`.
-- Blender bridge helper scripts belong in `Blender/SupportScripts/`.
-- Illustrator user-facing scripts stay directly in `Illustrator/`.
-- Windows user-facing scripts stay directly in `Windows/`.
-- Photoshop repo-safe public scripts stay in `Photoshop/`.
-- Preferred filename prefixes are `file_`, `util_`, and `org_`.
-- These prefixes are only a file-organization convention. They do not route scripts to panels or change execution behavior.
-- `Illustrator/HelperScripts/` is reserved for internal helper scripts.
-- `ScriptDump/` folders are for rough, old, downloaded, or testing files that should not be treated as normal FlowCell button candidates.
-
-Preferred usage:
-- `org_` for organization actions such as Illustrator layer tools or Blender collection tools
-- `file_` for file-oriented scripts
-- `util_` for utility scripts
-
-When a script is added through FlowCell's panel UI, the normal `Add Script` button opens in the current program folder, supports multi-select, adds one button per selected script, and writes those buttons only into the currently selected panel. On the Blender tab, `Add Button` is more than a file picker: it installs or registers the Blender-side action, creates or updates the wrapper in `Blender/FlowCellButtons/`, adds the button to the selected panel, and reports whether Blender must reload or restart before first use.
+If the file is valid, FlowCell installs the Blender-side action, creates the matching wrapper in `Blender/FlowCellButtons/`, adds the button to the selected panel, and tells you whether Blender needs a reload or restart.
 
 ## Repository Layout
 
