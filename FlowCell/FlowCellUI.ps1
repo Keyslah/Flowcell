@@ -1901,38 +1901,104 @@ function New-FlowCellProgramState($ProgramTab, $ProgramConfig = $null) {
 
 function Ensure-FlowCellRequiredButtons($ProgramState) {
     if ($null -eq $ProgramState) { return }
-    if ([int]$ProgramState.ProgramTabId -ne 1) { return }
+
+    $programTab = Get-FlowCellProgramTab -ProgramTabId ([int]$ProgramState.ProgramTabId)
+    $programConfig = if ($ProgramState.PSObject.Properties['ProgramConfig']) { $ProgramState.ProgramConfig } else { $null }
+    $programName = if ($programConfig -and $programConfig.PSObject.Properties['NormalizedName']) {
+        [string]$programConfig.NormalizedName
+    }
+    elseif ($programTab -and $programTab.PSObject.Properties['Label']) {
+        [string]$programTab.Label
+    }
+    else {
+        ''
+    }
+    $exePath = if ($programConfig -and $programConfig.PSObject.Properties['ExePath']) {
+        [string]$programConfig.ExePath
+    }
+    elseif ($programTab -and $programTab.PSObject.Properties['ExePath']) {
+        [string]$programTab.ExePath
+    }
+    else {
+        ''
+    }
+    $scriptFolder = if ($programConfig -and $programConfig.PSObject.Properties['ScriptFolder']) {
+        [string]$programConfig.ScriptFolder
+    }
+    elseif ($programTab -and $programTab.PSObject.Properties['ScriptFolder']) {
+        [string]$programTab.ScriptFolder
+    }
+    else {
+        ''
+    }
+    $programTemplateKey = Get-FlowCellProgramTemplateKey -ProgramName $programName -ExePath $exePath
 
     $filesPanel = @($ProgramState.Panels | Where-Object { [string]$_.Id -eq 'panel_files' } | Select-Object -First 1)
     if (@($filesPanel).Count -eq 0) { return }
     $filesPanel = $filesPanel[0]
 
-    $requiredButtons = @(
-        [pscustomobject]@{
-            Id = 'button_illustrator_save_selected_obj_to_project_3d'
-            Kind = 'macro'
-            Label = 'save obj'
-            Target = 'save_selected_obj_to_project_3d'
-            Shortcut = ''
-            BindingId = 0
-        },
-        [pscustomobject]@{
-            Id = 'button_illustrator_save_selected_obj_to_blender'
-            Kind = 'macro'
-            Label = 'blender obj'
-            Target = 'save_selected_obj_to_blender'
-            Shortcut = ''
-            BindingId = 0
-        },
-        [pscustomobject]@{
-            Id = 'button_illustrator_save_selected_png_to_blender_litho'
-            Kind = 'macro'
-            Label = 'blender litho'
-            Target = 'save_selected_png_to_blender_litho'
-            Shortcut = ''
-            BindingId = 0
+    $requiredButtons = @()
+    switch ($programTemplateKey) {
+        'illustrator' {
+            $requiredButtons = @(
+                [pscustomobject]@{
+                    Id = 'button_illustrator_save_selected_obj_to_project_3d'
+                    Kind = 'macro'
+                    Label = 'save obj'
+                    Target = 'save_selected_obj_to_project_3d'
+                    Shortcut = ''
+                    BindingId = 0
+                },
+                [pscustomobject]@{
+                    Id = 'button_illustrator_save_selected_obj_to_blender'
+                    Kind = 'macro'
+                    Label = 'blender obj'
+                    Target = 'save_selected_obj_to_blender'
+                    Shortcut = ''
+                    BindingId = 0
+                },
+                [pscustomobject]@{
+                    Id = 'button_illustrator_save_selected_png_to_blender_litho'
+                    Kind = 'macro'
+                    Label = 'blender litho'
+                    Target = 'save_selected_png_to_blender_litho'
+                    Shortcut = ''
+                    BindingId = 0
+                }
+            )
+            break
         }
-    )
+        'windows' {
+            $resolvedScriptFolder = if ([string]::IsNullOrWhiteSpace($scriptFolder)) {
+                Join-Path $script:FlowCellHomeRoot 'Windows'
+            }
+            else {
+                $scriptFolder
+            }
+            $requiredButtons = @(
+                [pscustomobject]@{
+                    Id = 'button_windows_update_github'
+                    Kind = 'script'
+                    Label = 'Update GitHub'
+                    Target = [string](Join-Path $resolvedScriptFolder 'file_update_github.ps1')
+                    Tooltip = 'Stage, commit, and push the active Explorer Git repository to GitHub.'
+                    Shortcut = ''
+                    BindingId = 0
+                },
+                [pscustomobject]@{
+                    Id = 'button_windows_pull_github'
+                    Kind = 'script'
+                    Label = 'GitHub Pull'
+                    Target = [string](Join-Path $resolvedScriptFolder 'file_pull_github.ps1')
+                    Tooltip = 'Fetch and fast-forward pull the active Explorer Git repository from GitHub.'
+                    Shortcut = ''
+                    BindingId = 0
+                }
+            )
+            break
+        }
+    }
+    if (@($requiredButtons).Count -eq 0) { return }
 
     foreach ($requiredButton in @($requiredButtons)) {
         $existing = @($filesPanel.Buttons | Where-Object {
@@ -9821,7 +9887,7 @@ function Invoke-FlowCellScriptTarget($ProgramTab, [string]$ScriptPath) {
         $scriptTimeoutSeconds = 120
         if (-not [string]::IsNullOrWhiteSpace($scriptFileName)) {
             $normalizedScriptFileName = [string]$scriptFileName.ToLowerInvariant()
-            if ($normalizedScriptFileName -like '*update_github*') {
+            if ($normalizedScriptFileName -like '*update_github*' -or $normalizedScriptFileName -like '*pull_github*') {
                 $scriptTimeoutSeconds = 900
             }
         }

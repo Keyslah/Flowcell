@@ -195,6 +195,11 @@ FlowCellUI.ps1 provides:
 - a startup checkbox that controls whether FlowCell launches minimized and restores the last pop-out-only layout
 - right-click rename and delete actions on the top program tiles
 - delayed main-page hover help: when the pointer stays over a tool tile for about 2 seconds, FlowCell shows that button's concise description in the main status line
+- Windows-template Files panels now auto-ensure built-in `Update GitHub` and `GitHub Pull` buttons so existing and newly created Windows tabs keep those repo actions available
+
+Windows Git actions note:
+- `Windows\file_update_github.ps1` stages, commits, and pushes the active Explorer Git repository to GitHub.
+- `Windows\file_pull_github.ps1` uses the same Explorer/clipboard repo targeting model but only performs a clean-worktree `git fetch` plus `git pull --ff-only`, refusing dirty or diverged branches.
 
 Shortcut display note:
 - Bind Viewer, the shortcut picker list, the bind-area shortcut dropdown, and the macro/program shortcut readouts now translate internal AutoHotkey-style tokens into readable labels such as `Ctrl + Alt + K` while keeping the stored bind format unchanged.
