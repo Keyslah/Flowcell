@@ -13267,7 +13267,14 @@ function Start-Ui {
                 return
             }
 
-            $installResultJson = & $installerPath -SelectedPaths $selectedPaths -PanelName ([string]$panel.Name)
+            try {
+                $installResultJson = & $installerPath -SelectedPaths $selectedPaths -PanelName ([string]$panel.Name)
+            }
+            catch {
+                Write-UiLog ('Blender Add Button installer failed. Panel={0}; Error={1}' -f [string]$panel.Name, $_.Exception.ToString())
+                & $setStatus ('Blender Add Button failed: {0}' -f $_.Exception.Message)
+                return
+            }
             $installResult = $null
             try {
                 $installResult = $installResultJson | ConvertFrom-Json

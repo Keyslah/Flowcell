@@ -34,6 +34,40 @@ function Get-FlowCellButtonPrefix([string]$PanelName) {
     }
 }
 
+function Write-FlowCellTextFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Value,
+        [ValidateSet('ASCII', 'UTF8')]
+        [string]$Encoding = 'ASCII',
+        [int]$RetryCount = 10
+    )
+
+    $lastError = $null
+    for ($attempt = 1; $attempt -le $RetryCount; $attempt++) {
+        try {
+            Set-Content -LiteralPath $Path -Value $Value -Encoding $Encoding
+            return
+        }
+        catch [System.IO.IOException] {
+            $lastError = $_
+            if ($attempt -lt $RetryCount) {
+                Start-Sleep -Milliseconds (40 * $attempt)
+                continue
+            }
+
+            throw ('Could not update "{0}" because another process is using it. Close the related FlowCell or Blender button/popout and try again.' -f $Path)
+        }
+    }
+
+    if ($lastError) {
+        throw $lastError
+    }
+}
+
 function Get-WrapperFileName([string]$PanelName, [string]$Name) {
     return ('{0}{1}.ps1' -f (Get-FlowCellButtonPrefix -PanelName $PanelName), (Get-SafeName -Value $Name))
 }
@@ -430,7 +464,7 @@ function Update-WrapperMetadata([string]$WrapperPath, [string]$FallbackDescripti
         $newLines += @('') + @($bodyLines)
     }
 
-    Set-Content -LiteralPath $WrapperPath -Value (($newLines -join "`r`n") + "`r`n") -Encoding ASCII
+    Write-FlowCellTextFile -Path $WrapperPath -Value (($newLines -join "`r`n") + "`r`n") -Encoding ASCII
 }
 
 $customProtectedNames = @(
@@ -560,7 +594,12 @@ foreach ($spec in $buttonSpecs.ToArray()) {
 foreach ($spec in $buttonSpecs) {
     if (-not [string]::IsNullOrWhiteSpace([string]$spec.Action)) {
         $wrapperContent = New-WrapperContent -DispatcherPath $dispatcherPath -Action ([string]$spec.Action) -Label ([string]$spec.Label) -Direction ([string]$spec.Direction)
-        Set-Content -LiteralPath ([string]$spec.Target) -Value $wrapperContent -Encoding ASCII
+        try {
+            Write-FlowCellTextFile -Path ([string]$spec.Target) -Value $wrapperContent -Encoding ASCII
+        }
+        catch {
+            Write-Warning $_.Exception.Message
+        }
     }
 }
 
@@ -577,10 +616,15 @@ foreach ($wrapper in @(Get-ChildItem -LiteralPath $wrapperRoot -Filter '*.ps1' -
             $description = [string]$actionDescriptions[$actionName]
         }
     }
-    Update-WrapperMetadata -WrapperPath $wrapperPath -FallbackDescription $description
+    try {
+        Update-WrapperMetadata -WrapperPath $wrapperPath -FallbackDescription $description
+    }
+    catch {
+        Write-Warning $_.Exception.Message
+    }
 }
 
-Set-Content -LiteralPath $configPath -Value ($config | ConvertTo-Json -Depth 16) -Encoding UTF8
+Write-FlowCellTextFile -Path $configPath -Value ($config | ConvertTo-Json -Depth 16) -Encoding UTF8
 
 $flowState = Get-Content -LiteralPath $flowCellStatePath -Raw | ConvertFrom-Json
 $blenderProgram = @($flowState.Programs | Where-Object { [int]$_.ProgramTabId -eq 3 } | Select-Object -First 1)
@@ -717,7 +761,7 @@ $collectionsPanel.IsPoppedOut = $false
 $blenderProgram.SelectedPanelId = if (@($importedEditButtons).Count -gt 0) { [string]$editPanel.Id } elseif (@($importedUtilityButtons).Count -gt 0) { [string]$utilityPanel.Id } elseif (@($importedFileButtons).Count -gt 0) { [string]$filesPanel.Id } else { [string]$collectionsPanel.Id }
 
 $json = $flowState | ConvertTo-Json -Depth 8
-Set-Content -LiteralPath $flowCellStatePath -Value $json -Encoding UTF8
+Write-FlowCellTextFile -Path $flowCellStatePath -Value $json -Encoding UTF8
 
 $layoutPaths = @(
     Join-Path $flowCellLayoutsRoot 'main.flowlayout.json'
@@ -758,7 +802,7 @@ foreach ($layoutPath in $layoutPaths) {
             $targetPanel[0].Buttons = @($sourcePanel.Buttons)
         }
 
-        Set-Content -LiteralPath $layoutPath -Value ($layoutPayload | ConvertTo-Json -Depth 12) -Encoding UTF8
+        Write-FlowCellTextFile -Path $layoutPath -Value ($layoutPayload | ConvertTo-Json -Depth 12) -Encoding UTF8
     }
     catch {
         Write-Warning ('Could not update layout {0}: {1}' -f $layoutPath, $_.Exception.Message)

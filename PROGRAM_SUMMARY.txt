@@ -265,6 +265,7 @@ The public example for Blender config now belongs in:
 
 Blender bridge requests prefer the configured bridge root, but FlowCell now also falls back to installed addon bridge folders under the user's AppData Blender addons path when a stale local bridge path no longer matches the live addon.
 Blender\ScriptBank now includes `custom_lithophane_tool.py`, a FlowCell-ready single-file lithophane action whose default `run_flowcell_action` opens an image picker, creates the DPI-sized plane, and completes the lithophane in one click while still exposing separate top-level `perform_*` helpers.
+Blender wrapper install/sync writes now retry briefly on Windows file locks, downgrade locked-wrapper metadata refreshes to warnings, and surface a normal Add Button status error instead of hard-failing the whole FlowCell window when one `.ps1` wrapper is temporarily in use.
 
 Repo-safe examples
 ------------------

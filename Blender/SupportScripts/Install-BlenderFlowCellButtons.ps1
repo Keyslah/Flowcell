@@ -66,6 +66,40 @@ function Get-FlowCellButtonPrefix([string]$PanelName) {
     }
 }
 
+function Write-FlowCellTextFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Value,
+        [ValidateSet('ASCII', 'UTF8')]
+        [string]$Encoding = 'ASCII',
+        [int]$RetryCount = 10
+    )
+
+    $lastError = $null
+    for ($attempt = 1; $attempt -le $RetryCount; $attempt++) {
+        try {
+            Set-Content -LiteralPath $Path -Value $Value -Encoding $Encoding
+            return
+        }
+        catch [System.IO.IOException] {
+            $lastError = $_
+            if ($attempt -lt $RetryCount) {
+                Start-Sleep -Milliseconds (40 * $attempt)
+                continue
+            }
+
+            throw ('Could not update "{0}" because another process is using it. Close the related FlowCell or Blender button/popout and try again.' -f $Path)
+        }
+    }
+
+    if ($lastError) {
+        throw $lastError
+    }
+}
+
 function Get-UniqueActionName([string]$BaseName, [System.Collections.Generic.HashSet[string]]$Taken) {
     $candidate = $BaseName
     $suffix = 2
@@ -394,7 +428,7 @@ function Update-WrapperMetadata([string]$WrapperPath, [string]$FallbackDescripti
 
     $newLines = @($header)
     if (@($bodyLines).Count -gt 0) { $newLines += @('') + @($bodyLines) }
-    Set-Content -LiteralPath $WrapperPath -Value (($newLines -join "`r`n") + "`r`n") -Encoding ASCII
+    Write-FlowCellTextFile -Path $WrapperPath -Value (($newLines -join "`r`n") + "`r`n") -Encoding ASCII
 }
 
 $takenActionNames = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
@@ -426,131 +460,141 @@ foreach ($selectedPathRaw in @($SelectedPaths)) {
         continue
     }
 
-    $extension = [System.IO.Path]::GetExtension($fullPath).ToLowerInvariant()
-    if ($extension -notin @('.py', '.ps1')) {
-        $installResults.Add([pscustomobject]@{ Source = $fullPath; Installed = $false; Message = 'Only .py and .ps1 files are supported for Blender Add Button.' }) | Out-Null
+    try {
+        $extension = [System.IO.Path]::GetExtension($fullPath).ToLowerInvariant()
+        if ($extension -notin @('.py', '.ps1')) {
+            $installResults.Add([pscustomobject]@{ Source = $fullPath; Installed = $false; Message = 'Only .py and .ps1 files are supported for Blender Add Button.' }) | Out-Null
+            continue
+        }
+
+        $label = [System.IO.Path]::GetFileNameWithoutExtension($fullPath)
+        if ([string]::IsNullOrWhiteSpace($label)) { $label = 'button' }
+        $safeLabel = Get-SafeName $label
+        $actionName = Get-UniqueActionName -BaseName ('custom_{0}' -f $safeLabel) -Taken $takenActionNames
+        $description = Get-TopDescription -Path $fullPath
+        if ([string]::IsNullOrWhiteSpace($description)) { $description = ('Run {0} through the Blender FlowCell bridge.' -f $label) }
+
+        $pythonPath = ''
+        $functionName = ''
+        $startLine = 1
+        $sourceMeta = $null
+
+        if ($extension -eq '.py') {
+            $entrypointMeta = Get-FlowCellCustomEntrypointMetadata -Path $fullPath
+            if ([string]::IsNullOrWhiteSpace([string]$entrypointMeta.FunctionName)) {
+                $availableFunctions = @($entrypointMeta.AvailableFunctions)
+                $availableSummary = if ($availableFunctions.Count -gt 0) {
+                    ' Found top-level functions: ' + (($availableFunctions | ForEach-Object { "'$_'" }) -join ', ') + '.'
+                }
+                else {
+                    ' No top-level Python functions were found.'
+                }
+                $installResults.Add([pscustomobject]@{
+                    Source = $fullPath
+                    Installed = $false
+                    Message = ([string]$entrypointMeta.Reason + $availableSummary)
+                }) | Out-Null
+                continue
+            }
+
+            $managedPythonPath = Join-Path $managedActionRoot ('{0}.py' -f $actionName)
+            Copy-Item -LiteralPath $fullPath -Destination $managedPythonPath -Force
+            $meta = Get-PythonFunctionMetadata -Path $managedPythonPath -PreferredFunctionName ([string]$entrypointMeta.FunctionName)
+            $pythonPath = $managedPythonPath
+            $functionName = [string]$meta.FunctionName
+            $startLine = [int]$meta.StartLine
+            $sourceMeta = [pscustomobject]@{ PythonPath = $pythonPath; FunctionName = $functionName; StartLine = $startLine; SourceText = [string]$meta.SourceText }
+        }
+        else {
+            $mappedAction = Get-PrimaryWrapperAction -ScriptPath $fullPath
+            if ([string]::IsNullOrWhiteSpace($mappedAction)) {
+                $installResults.Add([pscustomobject]@{ Source = $fullPath; Installed = $false; Message = 'Could not resolve a Blender action from this .ps1 file.' }) | Out-Null
+                continue
+            }
+            $resolvedMeta = Get-SourceMetadataForAction -ActionName $mappedAction
+            if ($null -eq $resolvedMeta) {
+                $installResults.Add([pscustomobject]@{ Source = $fullPath; Installed = $false; Message = ('Could not resolve Python source for action ''{0}''.' -f $mappedAction) }) | Out-Null
+                continue
+            }
+            $pythonPath = [string]$resolvedMeta.PythonPath
+            $functionName = [string]$resolvedMeta.FunctionName
+            $startLine = [int]$resolvedMeta.StartLine
+            $sourceMeta = $resolvedMeta
+        }
+
+        $wrapperName = ('{0}{1}.ps1' -f (Get-FlowCellButtonPrefix -PanelName $PanelName), $safeLabel)
+        $wrapperPath = Join-Path $wrapperRoot $wrapperName
+        $wrapperLines = @(
+            '$ErrorActionPreference = ''Stop''',
+            '$supportRoot = Join-Path (Split-Path -Parent $PSScriptRoot) ''SupportScripts''',
+            '$dispatcherPath = Join-Path $supportRoot ''Invoke-BlenderFlowCellAction.ps1''',
+            ("& `$dispatcherPath -Action '{0}' -Label '{1}'" -f ($actionName -replace "'","''"), ($label -replace "'","''")),
+            'exit $LASTEXITCODE'
+        )
+        Write-FlowCellTextFile -Path $wrapperPath -Value (($wrapperLines -join "`r`n") + "`r`n") -Encoding ASCII
+
+        $existingButton = @($config.buttons | Where-Object { $_.PSObject.Properties['action'] -and [string]$_.action -ieq $actionName } | Select-Object -First 1)
+        if (@($existingButton).Count -gt 0) {
+            $existingButton[0].label = [string]$label
+            $existingButton[0].tooltip = [string](Get-PreferredActionDescription -ActionName $actionName -CurrentDescription $description)
+            $existingButton[0].panel = [string]$PanelName
+            $updatedConfigButtons++
+        }
+        else {
+            $config.buttons += [pscustomobject]@{
+                label = [string]$label
+                tooltip = [string](Get-PreferredActionDescription -ActionName $actionName -CurrentDescription $description)
+                action = [string]$actionName
+                panel = [string]$PanelName
+            }
+            $addedConfigButtons++
+        }
+
+        $existingEntry = @($registry.actions | Where-Object { $_.PSObject.Properties['action'] -and [string]$_.action -ieq $actionName } | Select-Object -First 1)
+        if (@($existingEntry).Count -gt 0) {
+            $existingEntry[0].pythonPath = [string]$pythonPath
+            $existingEntry[0].functionName = [string]$functionName
+            $existingEntry[0] | Add-Member -MemberType NoteProperty -Name sourcePythonPath -Value ([string]$pythonPath) -Force
+            $existingEntry[0] | Add-Member -MemberType NoteProperty -Name sourceFunctionName -Value ([string]$functionName) -Force
+            $existingEntry[0] | Add-Member -MemberType NoteProperty -Name startLine -Value ([int]$startLine) -Force
+            $existingEntry[0] | Add-Member -MemberType NoteProperty -Name description -Value ([string]$description) -Force
+        }
+        else {
+            $registry.actions += [pscustomobject]@{
+                action = [string]$actionName
+                pythonPath = [string]$pythonPath
+                functionName = [string]$functionName
+                sourcePythonPath = [string]$pythonPath
+                sourceFunctionName = [string]$functionName
+                startLine = [int]$startLine
+                description = [string]$description
+            }
+            $registeredActions++
+        }
+
+        Update-WrapperMetadata -WrapperPath $wrapperPath -FallbackDescription $description
+
+        $installResults.Add([pscustomobject]@{
+            Source = $fullPath
+            Installed = $true
+            Action = $actionName
+            WrapperPath = $wrapperPath
+            PythonPath = $pythonPath
+            FunctionName = $functionName
+        }) | Out-Null
+    }
+    catch {
+        $installResults.Add([pscustomobject]@{
+            Source = $fullPath
+            Installed = $false
+            Message = $_.Exception.Message
+        }) | Out-Null
         continue
     }
-
-    $label = [System.IO.Path]::GetFileNameWithoutExtension($fullPath)
-    if ([string]::IsNullOrWhiteSpace($label)) { $label = 'button' }
-    $safeLabel = Get-SafeName $label
-    $actionName = Get-UniqueActionName -BaseName ('custom_{0}' -f $safeLabel) -Taken $takenActionNames
-    $description = Get-TopDescription -Path $fullPath
-    if ([string]::IsNullOrWhiteSpace($description)) { $description = ('Run {0} through the Blender FlowCell bridge.' -f $label) }
-
-    $pythonPath = ''
-    $functionName = ''
-    $startLine = 1
-    $sourceMeta = $null
-
-    if ($extension -eq '.py') {
-        $entrypointMeta = Get-FlowCellCustomEntrypointMetadata -Path $fullPath
-        if ([string]::IsNullOrWhiteSpace([string]$entrypointMeta.FunctionName)) {
-            $availableFunctions = @($entrypointMeta.AvailableFunctions)
-            $availableSummary = if ($availableFunctions.Count -gt 0) {
-                ' Found top-level functions: ' + (($availableFunctions | ForEach-Object { "'$_'" }) -join ', ') + '.'
-            }
-            else {
-                ' No top-level Python functions were found.'
-            }
-            $installResults.Add([pscustomobject]@{
-                Source = $fullPath
-                Installed = $false
-                Message = ([string]$entrypointMeta.Reason + $availableSummary)
-            }) | Out-Null
-            continue
-        }
-
-        $managedPythonPath = Join-Path $managedActionRoot ('{0}.py' -f $actionName)
-        Copy-Item -LiteralPath $fullPath -Destination $managedPythonPath -Force
-        $meta = Get-PythonFunctionMetadata -Path $managedPythonPath -PreferredFunctionName ([string]$entrypointMeta.FunctionName)
-        $pythonPath = $managedPythonPath
-        $functionName = [string]$meta.FunctionName
-        $startLine = [int]$meta.StartLine
-        $sourceMeta = [pscustomobject]@{ PythonPath = $pythonPath; FunctionName = $functionName; StartLine = $startLine; SourceText = [string]$meta.SourceText }
-    }
-    else {
-        $mappedAction = Get-PrimaryWrapperAction -ScriptPath $fullPath
-        if ([string]::IsNullOrWhiteSpace($mappedAction)) {
-            $installResults.Add([pscustomobject]@{ Source = $fullPath; Installed = $false; Message = 'Could not resolve a Blender action from this .ps1 file.' }) | Out-Null
-            continue
-        }
-        $resolvedMeta = Get-SourceMetadataForAction -ActionName $mappedAction
-        if ($null -eq $resolvedMeta) {
-            $installResults.Add([pscustomobject]@{ Source = $fullPath; Installed = $false; Message = ('Could not resolve Python source for action ''{0}''.' -f $mappedAction) }) | Out-Null
-            continue
-        }
-        $pythonPath = [string]$resolvedMeta.PythonPath
-        $functionName = [string]$resolvedMeta.FunctionName
-        $startLine = [int]$resolvedMeta.StartLine
-        $sourceMeta = $resolvedMeta
-    }
-
-    $wrapperName = ('{0}{1}.ps1' -f (Get-FlowCellButtonPrefix -PanelName $PanelName), $safeLabel)
-    $wrapperPath = Join-Path $wrapperRoot $wrapperName
-    $wrapperLines = @(
-        '$ErrorActionPreference = ''Stop''',
-        '$supportRoot = Join-Path (Split-Path -Parent $PSScriptRoot) ''SupportScripts''',
-        '$dispatcherPath = Join-Path $supportRoot ''Invoke-BlenderFlowCellAction.ps1''',
-        ("& `$dispatcherPath -Action '{0}' -Label '{1}'" -f ($actionName -replace "'","''"), ($label -replace "'","''")),
-        'exit $LASTEXITCODE'
-    )
-    Set-Content -LiteralPath $wrapperPath -Value (($wrapperLines -join "`r`n") + "`r`n") -Encoding ASCII
-
-    $existingButton = @($config.buttons | Where-Object { $_.PSObject.Properties['action'] -and [string]$_.action -ieq $actionName } | Select-Object -First 1)
-    if (@($existingButton).Count -gt 0) {
-        $existingButton[0].label = [string]$label
-        $existingButton[0].tooltip = [string](Get-PreferredActionDescription -ActionName $actionName -CurrentDescription $description)
-        $existingButton[0].panel = [string]$PanelName
-        $updatedConfigButtons++
-    }
-    else {
-        $config.buttons += [pscustomobject]@{
-            label = [string]$label
-            tooltip = [string](Get-PreferredActionDescription -ActionName $actionName -CurrentDescription $description)
-            action = [string]$actionName
-            panel = [string]$PanelName
-        }
-        $addedConfigButtons++
-    }
-
-    $existingEntry = @($registry.actions | Where-Object { $_.PSObject.Properties['action'] -and [string]$_.action -ieq $actionName } | Select-Object -First 1)
-    if (@($existingEntry).Count -gt 0) {
-        $existingEntry[0].pythonPath = [string]$pythonPath
-        $existingEntry[0].functionName = [string]$functionName
-        $existingEntry[0] | Add-Member -MemberType NoteProperty -Name sourcePythonPath -Value ([string]$pythonPath) -Force
-        $existingEntry[0] | Add-Member -MemberType NoteProperty -Name sourceFunctionName -Value ([string]$functionName) -Force
-        $existingEntry[0] | Add-Member -MemberType NoteProperty -Name startLine -Value ([int]$startLine) -Force
-        $existingEntry[0] | Add-Member -MemberType NoteProperty -Name description -Value ([string]$description) -Force
-    }
-    else {
-        $registry.actions += [pscustomobject]@{
-            action = [string]$actionName
-            pythonPath = [string]$pythonPath
-            functionName = [string]$functionName
-            sourcePythonPath = [string]$pythonPath
-            sourceFunctionName = [string]$functionName
-            startLine = [int]$startLine
-            description = [string]$description
-        }
-        $registeredActions++
-    }
-
-    Update-WrapperMetadata -WrapperPath $wrapperPath -FallbackDescription $description
-
-    $installResults.Add([pscustomobject]@{
-        Source = $fullPath
-        Installed = $true
-        Action = $actionName
-        WrapperPath = $wrapperPath
-        PythonPath = $pythonPath
-        FunctionName = $functionName
-    }) | Out-Null
 }
 
-Set-Content -LiteralPath $ConfigPath -Value ($config | ConvertTo-Json -Depth 16) -Encoding UTF8
-Set-Content -LiteralPath $customRegistryPath -Value ($registry | ConvertTo-Json -Depth 8) -Encoding UTF8
+Write-FlowCellTextFile -Path $ConfigPath -Value ($config | ConvertTo-Json -Depth 16) -Encoding UTF8
+Write-FlowCellTextFile -Path $customRegistryPath -Value ($registry | ConvertTo-Json -Depth 8) -Encoding UTF8
 
 if (Test-Path -LiteralPath $customActionSyncPath -PathType Leaf) {
     & $customActionSyncPath -ConfigPath $ConfigPath -BridgeFolder $BridgeFolder | Out-Null
@@ -568,7 +612,12 @@ if (Test-Path -LiteralPath $customActionSyncPath -PathType Leaf) {
 }
 
 foreach ($wrapper in @(Get-ChildItem -LiteralPath $wrapperRoot -Filter '*.ps1' -File -ErrorAction SilentlyContinue)) {
-    Update-WrapperMetadata -WrapperPath $wrapper.FullName
+    try {
+        Update-WrapperMetadata -WrapperPath $wrapper.FullName
+    }
+    catch {
+        Write-Warning $_.Exception.Message
+    }
 }
 
 if (-not $SkipSync -and (Test-Path -LiteralPath $syncScriptPath -PathType Leaf)) {
