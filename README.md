@@ -1,9 +1,9 @@
 Support FlowCell: [![Donate via Stripe](https://img.shields.io/badge/Donate-Stripe-635BFF?logo=stripe&logoColor=white)](https://buy.stripe.com/aFa3cw2rF5fR7xyauo8AE01)
 # FlowCell
 
-FlowCell is a Windows desktop automation shell for workflows. AutoHotkey v2 is required for FlowCell's backend automation, including hotkeys, shortcut bindings, recorded macros, macro playback, AutoHotkey buttons, Illustrator UI scanning/actions, and backend-run FlowCell actions. Download AutoHotkey v2 from the official site: https://www.autohotkey.com/
-
 FlowCell uses a PowerShell WPF UI and an AutoHotkey v2 backend to manage program Scripts, hotkeys, and macros.
+
+AutoHotkey v2 is required  https://www.autohotkey.com/
 
 When a script is added through FlowCell's panel UI, the normal Add Script button opens in the current program folder, supports multi-select, adds one button per selected script, and writes those buttons only into the currently selected panel. 
 
@@ -20,8 +20,7 @@ This repository is structured for public source control. Publishable source stay
 
 When you click `Add Button` in the Blender tab, FlowCell asks for one Blender `.py` script.
 
-Use the Codex prompt at the top of [docs/blender-buttons.md](docs/blender-buttons.md) when you want Codex to convert a Blender tool into a FlowCell-ready button.
-
+Use the Ai prompt at the top of [docs/blender-buttons.md](docs/blender-buttons.md) when you want Ai to convert a Blender script for flowcell.
 A valid Blender button script should:
 
 - be normal Blender Python, usually using `bpy`
