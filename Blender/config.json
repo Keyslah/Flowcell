@@ -49,9 +49,33 @@
       "panel": "utility"
     },
     {
-      "label": "Smart Axis Lock",
-      "tooltip": "Open Smart Axis Lock controls for Baseline, Live, and X/Y/Z side toggles.",
-      "scriptPath": ".\\FlowCellButtons\\util_smart_axis_lock.ps1",
+      "label": "Baseline",
+      "tooltip": "Smart Axis Lock: store selected object bounds as the baseline.",
+      "scriptPath": ".\\FlowCellButtons\\util_smart_axis_baseline.ps1",
+      "panel": "utility"
+    },
+    {
+      "label": "Live",
+      "tooltip": "Smart Axis Lock: toggle live side pinning while scaling.",
+      "scriptPath": ".\\FlowCellButtons\\util_smart_axis_live.ps1",
+      "panel": "utility"
+    },
+    {
+      "label": "X",
+      "tooltip": "Smart Axis Lock: cycle X between none, minus side, plus side.",
+      "scriptPath": ".\\FlowCellButtons\\util_smart_axis_x.ps1",
+      "panel": "utility"
+    },
+    {
+      "label": "Y",
+      "tooltip": "Smart Axis Lock: cycle Y between none, minus side, plus side.",
+      "scriptPath": ".\\FlowCellButtons\\util_smart_axis_y.ps1",
+      "panel": "utility"
+    },
+    {
+      "label": "Z",
+      "tooltip": "Smart Axis Lock: cycle Z between none, minus side, plus side.",
+      "scriptPath": ".\\FlowCellButtons\\util_smart_axis_z.ps1",
       "panel": "utility"
     },
     {
