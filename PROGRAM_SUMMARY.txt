@@ -264,7 +264,7 @@ The public example for Blender config now belongs in:
 - examples\Blender\config.example.json
 
 Blender bridge requests prefer the configured bridge root, but FlowCell now also falls back to installed addon bridge folders under the user's AppData Blender addons path when a stale local bridge path no longer matches the live addon.
-Blender\Scriptbank now includes `custom_lithophane_tool.py`, a FlowCell-ready single-file lithophane action whose default `run_flowcell_action` opens an image picker, creates the DPI-sized plane, and completes the lithophane in one click while still exposing separate top-level `perform_*` helpers.
+Blender\ScriptBank now includes `custom_lithophane_tool.py`, a FlowCell-ready single-file lithophane action whose default `run_flowcell_action` opens an image picker, creates the DPI-sized plane, and completes the lithophane in one click while still exposing separate top-level `perform_*` helpers.
 
 Repo-safe examples
 ------------------
