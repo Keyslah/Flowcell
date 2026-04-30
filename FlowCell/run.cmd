@@ -52,16 +52,21 @@ exit /b %EXIT_CODE%
 :launch_backend
 if not defined AHK_EXE (
     echo AutoHotkey v2 was not found.
-    echo Expected a bundled runtime in one of:
-    echo   %ROOT%runtime\AutoHotkey64.exe
-    echo   %ROOT%runtime\AutoHotkey.exe
-    echo   %ROOT%local\bin\AutoHotkey64.exe
-    echo   %ROOT%local\bin\AutoHotkey.exe
-    echo Or a system install in:
-    echo   C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe
-    echo   C:\Program Files\AutoHotkey\v2\AutoHotkey.exe
     echo.
-    echo Release ZIPs should include AutoHotkey v2 under FlowCell\runtime.
+    echo FlowCell can open its PowerShell UI without AutoHotkey, but these features need AutoHotkey v2:
+    echo   - hotkeys and shortcut bindings
+    echo   - recorded macros and macro playback
+    echo   - AutoHotkey script buttons
+    echo   - backend-run program actions that route through FlowCellBackend.ahk
+    echo.
+    echo Download AutoHotkey v2 from the official site:
+    echo   https://www.autohotkey.com/
+    echo.
+    echo FlowCell also accepts a portable AutoHotkey v2 runtime at:
+    echo   %ROOT%runtime\AutoHotkey64.exe
+    echo   %ROOT%local\bin\AutoHotkey64.exe
+    echo.
+    echo After installing or adding AutoHotkey v2, close this window and run FlowCell again.
     pause
     exit /b 1
 )
