@@ -1,7 +1,9 @@
 Support FlowCell: [![Donate via Stripe](https://img.shields.io/badge/Donate-Stripe-635BFF?logo=stripe&logoColor=white)](https://buy.stripe.com/aFa3cw2rF5fR7xyauo8AE01)
 # FlowCell
 
-FlowCell is a Windows desktop automation shell for workflows. It uses a PowerShell WPF UI and an AutoHotkey v2 backend to manage program Scripts, hotkeys, and macros.
+FlowCell is a Windows desktop automation shell for workflows. AutoHotkey v2 is required for FlowCell's backend automation, including hotkeys, shortcut bindings, recorded macros, macro playback, AutoHotkey buttons, Illustrator UI scanning/actions, and backend-run FlowCell actions. Download AutoHotkey v2 from the official site: https://www.autohotkey.com/
+
+FlowCell uses a PowerShell WPF UI and an AutoHotkey v2 backend to manage program Scripts, hotkeys, and macros.
 
 When a script is added through FlowCell's panel UI, the normal Add Script button opens in the current program folder, supports multi-select, adds one button per selected script, and writes those buttons only into the currently selected panel. 
 
@@ -69,8 +71,8 @@ Some Windows helper scripts also use local environment overrides for machine-spe
 - `run.cmd` at the repo root delegates to `FlowCell/run.cmd`.
 - `FlowCell/run.cmd` launches the PowerShell UI or the AutoHotkey backend.
 - Launcher logs are written to `FlowCell/local/logs/`.
-- For the backend, `FlowCell/run.cmd` now looks for AutoHotkey v2 in bundled release runtime paths first, then local user runtime paths, then system install paths.
-- User-facing release ZIPs should include AutoHotkey v2 as `FlowCell/runtime/AutoHotkey64.exe` so most users do not need a separate AutoHotkey install.
+- AutoHotkey v2 is required for FlowCell's backend automation.
+- If AutoHotkey v2 is missing, FlowCell shows the official AutoHotkey download link.
 
 ## Issues and Discussions
 
