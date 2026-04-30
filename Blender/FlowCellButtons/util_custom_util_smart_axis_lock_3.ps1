@@ -1,6 +1,6 @@
 # Description: Smart Axis Lock stores selected object bounds, cycles pinned axis sides, and can run live while scaling.
 
-# Source Python File: D:\Dev\workspace\Codex\flowcell\Blender\ManagedActions\custom_util_smart_axis_lock.py
+# Source Python File: D:\Dev\workspace\Codex\flowcell\Blender\ManagedActions\custom_util_smart_axis_lock_3.py
 
 # Source Action Function: run_flowcell_action
 # Source Action Start Line: 260
@@ -35,7 +35,7 @@
 $ErrorActionPreference = 'Stop'
 $supportRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'SupportScripts'
 $dispatcherPath = Join-Path $supportRoot 'Invoke-BlenderFlowCellAction.ps1'
-& $dispatcherPath -Action 'custom_util_smart_axis_lock' -Label 'util_smart_axis_lock'
+& $dispatcherPath -Action 'custom_util_smart_axis_lock_3' -Label 'util_smart_axis_lock'
 exit $LASTEXITCODE
 
 
