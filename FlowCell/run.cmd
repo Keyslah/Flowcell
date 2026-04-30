@@ -51,13 +51,9 @@ exit /b %EXIT_CODE%
 
 :launch_backend
 if not defined AHK_EXE (
-    echo AutoHotkey v2 was not found.
+    echo AutoHotkey v2 is required for FlowCell.
     echo.
-    echo FlowCell can open its PowerShell UI without AutoHotkey, but these features need AutoHotkey v2:
-    echo   - hotkeys and shortcut bindings
-    echo   - recorded macros and macro playback
-    echo   - AutoHotkey script buttons
-    echo   - backend-run program actions that route through FlowCellBackend.ahk
+    echo AutoHotkey v2 is the FlowCell backend runtime. Without it, FlowCell cannot run hotkeys, shortcut bindings, recorded macros, macro playback, AutoHotkey buttons, Illustrator UI scanning/actions, or backend-run FlowCell actions.
     echo.
     echo Download AutoHotkey v2 from the official site:
     echo   https://www.autohotkey.com/
