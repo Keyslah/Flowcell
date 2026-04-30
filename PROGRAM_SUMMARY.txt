@@ -25,11 +25,11 @@ The repository is now arranged for public GitHub use. Tracked source, docs, exam
 FlowCell also now includes donation support through .github\FUNDING.yml, a README support badge link, and a Stripe Payment Link.
 Contributor guidance now explicitly requires relative repo-path resolution instead of tracked machine-specific absolute paths.
 README and contributor docs now lead with script folder rules, explicitly point Blender submissions to Blender\FlowCellButtons, and direct contributors toward GitHub Issues for bugs and GitHub Discussions for questions or early script proposals.
-README now keeps the Blender-button explanation short and points directly to the deeper doc instead of repeating the full model.
-docs\blender-buttons.md now leads with the real Add Button user flow, puts the script contract immediately after the button click step, and keeps the runtime/path internals later in the page.
+README now puts the Blender-button docs link and Codex prompt guidance directly in the Blender section so the right conversion prompt is the first thing users see.
+docs\blender-buttons.md is now intentionally short: it starts with the Codex conversion prompt, then keeps only a compact contract, Add Button flow, and main path list.
 That Blender-button doc still covers FlowCell-root paths only, including FlowCellButtons, SupportScripts, ManagedActions, config files, Blender runtime filenames, and ScriptDump locations without embedding personal machine paths.
-That deep Blender-button doc explicitly states that FlowCell copies the selected script's code into the live Blender file `...\scripts\addons\blender_bridge\flowcell_actions.py`.
-That doc also explains Blender custom-action script structure in concrete terms: required entrypoint names, accepted callable signatures, recommended return shapes, failure handling, top-level function requirements, and a minimal starter template.
+That Blender-button doc still explicitly states that FlowCell copies the selected script's code into the live Blender file `...\scripts\addons\blender_bridge\flowcell_actions.py`.
+That doc now keeps the custom-action structure guidance concise while still covering required entrypoint names, accepted callable signatures, prompt preservation, return shapes, and a minimal starter template.
 Blender\FlowCellButtons\README.md is back to being a tiny folder-specific note that points readers at docs\blender-buttons.md.
 
 Top-level folders:
@@ -83,6 +83,9 @@ Blender FlowCell button scripts belong in:
 
 Blender support scripts belong in:
 - Blender\SupportScripts
+
+Blender sidebar helper add-ons belong in:
+- Blender\AddonScripts
 
 Managed Blender action source files belong in:
 - Blender\ManagedActions
@@ -225,6 +228,7 @@ Blender integration
 -------------------
 Blender remains structured around:
 
+- Blender\AddonScripts\refresh_flowcell_item_tab.py as a Blender-side Item-tab helper that reloads the live FlowCell Blender add-on and restarts the FlowCell desktop UI
 - Blender\SupportScripts\Invoke-BlenderFlowCellAction.ps1 as the dispatcher support script
 - Blender\SupportScripts\Sync-BlenderButtonsToFlowCell.ps1 as the sync/regeneration support script
 - Blender\SupportScripts\Sync-BlenderCustomActionCode.ps1 as the live custom-code regeneration support script
@@ -249,11 +253,13 @@ Every wrapper in `Blender\FlowCellButtons` now starts with a `Description:` line
 `Sync-BlenderButtonsToFlowCell.ps1` now preserves and regenerates that wrapper metadata block for built-in Blender action wrappers, including blank-line spacing between the description, source-map fields, and commented Python logic.
 That Blender sync path now also skips popout-only layout snapshots that do not embed a full `Programs` state payload, so routine Blender button syncs no longer emit false layout warnings.
 Built-in Blender action wrappers and the live Blender config now prefer an authoritative action-description map during install/sync, so stale generic tooltips like `Run the Blender sort action...` are replaced with behavior-specific text in both wrapper headers and launcher metadata.
+`Blender\AddonScripts\refresh_flowcell_item_tab.py` now provides a Blender `Item` sidebar button labeled `refresh flowcell` that reloads the installed `flowcell_actions` add-on and relaunches FlowCell through the repo's `run_hidden.vbs` launcher.
 
 The public example for Blender config now belongs in:
 - examples\Blender\config.example.json
 
 Blender bridge requests prefer the configured bridge root, but FlowCell now also falls back to installed addon bridge folders under the user's AppData Blender addons path when a stale local bridge path no longer matches the live addon.
+Blender\Scriptbank now includes `custom_lithophane_tool.py`, a FlowCell-ready single-file lithophane action whose default `run_flowcell_action` opens an image picker, creates the DPI-sized plane, and completes the lithophane in one click while still exposing separate top-level `perform_*` helpers.
 
 Repo-safe examples
 ------------------

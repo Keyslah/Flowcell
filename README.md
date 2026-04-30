@@ -9,11 +9,15 @@ This repository is structured for public source control. Publishable source stay
 
 When you click Add Button in the Blender tab, FlowCell asks for a Blender `.py` script.
 
-That script should be normal Blender Python, usually using `bpy`, and it should work from the current scene, selection, mode, or active object. It should expose one top-level entrypoint named `run_flowcell_action`, `main`, or `perform_*`. It should not be a full Blender add-on, installer, custom Blender UI package, background listener, or Text Editor-only script.
+Use the Codex prompt at the top of [docs/blender-buttons.md](docs/blender-buttons.md) when you want Codex to convert a Blender tool into a FlowCell-ready button script.
 
-If the script is valid, FlowCell installs the Blender-side action, creates the matching wrapper in `Blender/FlowCellButtons/`, adds the new button to the selected panel, and tells you whether Blender needs a reload or restart.
+The short version:
 
-See [docs/blender-buttons.md](docs/blender-buttons.md) for the full Add Button walkthrough, the script contract, and the runtime file layout.
+- give FlowCell one normal Blender Python file, not a full add-on package
+- expose `run_flowcell_action`, `main`, or `perform_*`
+- preserve the real interaction model, including prompts like file pickers when the source tool needs them
+
+If the script is valid, FlowCell installs the Blender-side action, creates the matching wrapper in `Blender/FlowCellButtons/`, adds the button to the selected panel, and tells you whether Blender needs a reload or restart.
 
 ## Script Folder Rules
 
