@@ -1048,6 +1048,46 @@ class FlowCellApp {
         return exePath
     }
 
+    ResolveProgramScriptPath(scriptPath, programConfig := "") {
+        scriptPath := Trim(scriptPath)
+        if scriptPath = ""
+            return ""
+
+        if InStr(scriptPath, ":") || SubStr(scriptPath, 1, 2) = "\\"
+            return scriptPath
+
+        scriptFolder := ""
+        if IsObject(programConfig) && programConfig.HasOwnProp("scriptFolder")
+            scriptFolder := Trim(programConfig.scriptFolder)
+        if scriptFolder = ""
+            return scriptPath
+
+        candidates := [scriptPath]
+        candidates.Push(scriptFolder "\" scriptPath)
+
+        SplitPath scriptFolder, &scriptFolderLeaf, &scriptFolderParent
+        if scriptFolderParent != ""
+            candidates.Push(scriptFolderParent "\" scriptPath)
+
+        normalizedRelative := scriptPath
+        while SubStr(normalizedRelative, 1, 2) = ".\" || SubStr(normalizedRelative, 1, 2) = "./"
+            normalizedRelative := SubStr(normalizedRelative, 3)
+        if scriptFolderParent != "" && scriptFolderLeaf != "" {
+            folderPrefix := scriptFolderLeaf "\"
+            if InStr(normalizedRelative, folderPrefix) = 1
+                candidates.Push(scriptFolderParent "\" normalizedRelative)
+        }
+
+        fallback := candidates.Length >= 2 ? candidates[2] : scriptPath
+        for candidate in candidates {
+            if FileExist(candidate)
+                return candidate
+            fallback := candidate
+        }
+
+        return fallback
+    }
+
     FindProcessWindowByExecutable(activateExe) {
         activateExe := Trim(activateExe "")
         if activateExe = ""
@@ -1475,6 +1515,7 @@ class FlowCellApp {
             programName := this.GetProgramNameFromBinding(programTabId, scriptPath)
 
         programConfig := this.GetProgramTabConfig(programTabId, programName)
+        scriptPath := this.ResolveProgramScriptPath(scriptPath, programConfig)
         resolvedProgramName := Trim(programConfig.label != "" ? programConfig.label : programName)
         if resolvedProgramName = ""
             resolvedProgramName := this.GetProgramNameFromBinding(programTabId, scriptPath)
