@@ -1,5 +1,5 @@
 FlowCell Program Summary
-Last updated: 2026-04-29
+Last updated: 2026-05-02
 
 Maintenance rule
 ----------------
@@ -249,6 +249,8 @@ The real Blender bridge runtime folder is the live AppData add-on path reference
 The installed Blender addon runtime file `flowcell_actions.py` now identifies itself as `Blender Organizer` and includes a top-of-file button reference block that documents each button's behavior in concise terms.
 Blender FlowCell button descriptions now avoid generic placeholders and include explicit behavior details (for example, `sort` now documents visible-to-Live, matching invisible-to-Snapshots `s#`, and remaining invisible-to-Trash `t#` behavior).
 Blender wrapper scripts now consistently resolve the dispatcher from `Blender\SupportScripts\Invoke-BlenderFlowCellAction.ps1`, including `file_cura.ps1`, `file_orca.ps1`, and `util_cursor_center_hole.ps1`.
+`Blender\FlowCellButtons\file_orca.ps1`, `file_cura.ps1`, `util_alignment_tools.ps1`, `util_flatten_revolve_tools.ps1`, `util_cursor_center_hole.ps1`, and the `util_smart_axis_*` wrapper set were restored from their pre-delete April 30 versions after commit `63899a9` removed tracked wrappers while Blender config and local FlowCell state still pointed at them.
+`Blender\SupportScripts\Sync-BlenderButtonsToFlowCell.ps1` now resolves relative Blender config `scriptPath` values against the `Blender` project root before wrapper cleanup and metadata matching, and it now stops with a clear error if any non-`ScriptDump` `scriptPath` target from Blender config is missing, so managed paths like `.\FlowCellButtons\file_orca.ps1` cannot be misread as orphaned wrappers and deleted silently again.
 Blender `Add Button` installs custom action scripts into `Blender\ManagedActions` and registers them through `blender_bridge\flowcell_custom_actions.json` under the live Blender add-ons path.
 The Blender bridge runtime now regenerates an auto-generated custom-action section inside the live `flowcell_actions.py` file from the currently registered Blender buttons, so only active custom button handlers remain in that file.
 That live `flowcell_actions.py` regeneration now writes UTF-8 without a BOM, because Blender 5.0's add-on scanner only detects add-ons whose first line literally starts with `bl_info`, and a BOM made the FlowCell add-on disappear into Preferences > Missing Add-ons.

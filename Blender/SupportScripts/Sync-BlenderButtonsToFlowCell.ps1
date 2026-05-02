@@ -175,6 +175,49 @@ function Get-NormalizedPathKey([string]$Path) {
     }
 }
 
+function Resolve-BlenderConfigScriptPath([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return ''
+    }
+
+    try {
+        if ([System.IO.Path]::IsPathRooted($Path)) {
+            return [System.IO.Path]::GetFullPath([string]$Path)
+        }
+
+        return [System.IO.Path]::GetFullPath((Join-Path $projectRoot $Path))
+    }
+    catch {
+        return [string]$Path
+    }
+}
+
+function Get-ManagedConfigScriptTargetInfo([object[]]$Buttons) {
+    $targets = New-Object System.Collections.Generic.List[object]
+    foreach ($button in @($Buttons)) {
+        if (-not ($button.PSObject.Properties['scriptPath'])) { continue }
+
+        $scriptPath = [string]$button.scriptPath
+        if ([string]::IsNullOrWhiteSpace($scriptPath)) { continue }
+
+        $resolvedPath = Resolve-BlenderConfigScriptPath -Path $scriptPath
+        if (Test-PathUnderScriptDump -Path $resolvedPath) {
+            continue
+        }
+
+        $label = if ($button.PSObject.Properties['label']) { [string]$button.label } else { '' }
+        $targets.Add([pscustomobject]@{
+            Label           = $label
+            ScriptPath      = $scriptPath
+            ResolvedPath    = $resolvedPath
+            Exists          = (Test-Path -LiteralPath $resolvedPath -PathType Leaf)
+            IsWrapperTarget = ((Split-Path -Parent $resolvedPath) -ieq $wrapperRoot)
+        }) | Out-Null
+    }
+
+    return $targets
+}
+
 if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
     throw "Blender config not found: $configPath"
 }
@@ -467,22 +510,22 @@ function Update-WrapperMetadata([string]$WrapperPath, [string]$FallbackDescripti
     Write-FlowCellTextFile -Path $WrapperPath -Value (($newLines -join "`r`n") + "`r`n") -Encoding ASCII
 }
 
+$managedScriptTargets = @(Get-ManagedConfigScriptTargetInfo -Buttons @($config.buttons))
+$missingManagedScriptTargets = @($managedScriptTargets | Where-Object { -not $_.Exists })
+if ($missingManagedScriptTargets.Count -gt 0) {
+    $missingSummary = ($missingManagedScriptTargets |
+        Sort-Object Label, ScriptPath |
+        ForEach-Object {
+            $name = if ([string]::IsNullOrWhiteSpace([string]$_.Label)) { '[no label]' } else { [string]$_.Label }
+            (' - {0}: {1}' -f $name, [string]$_.ScriptPath)
+        }) -join "`n"
+    throw ("Blender config references missing scriptPath files. Restore or retarget these buttons before syncing:`n{0}" -f $missingSummary)
+}
+
 $customProtectedNames = @(
-    foreach ($button in @($config.buttons)) {
-        if (-not ($button.PSObject.Properties['scriptPath'])) { continue }
-        $scriptPath = [string]$button.scriptPath
-        if ([string]::IsNullOrWhiteSpace($scriptPath)) { continue }
-        try {
-            $resolved = Resolve-Path -LiteralPath $scriptPath -ErrorAction SilentlyContinue
-            $fullPath = if ($resolved) { [string]$resolved.Path } else { $scriptPath }
-            if (Test-PathUnderScriptDump -Path $fullPath) {
-                continue
-            }
-            if ((Split-Path -Parent $fullPath) -ieq $wrapperRoot) {
-                Split-Path -Leaf $fullPath
-            }
-        }
-        catch {
+    foreach ($target in $managedScriptTargets) {
+        if ($target.IsWrapperTarget) {
+            Split-Path -Leaf ([string]$target.ResolvedPath)
         }
     }
 )
@@ -515,7 +558,8 @@ foreach ($button in @($config.buttons)) {
     }
 
     if (-not [string]::IsNullOrWhiteSpace($scriptPath)) {
-        if (Test-PathUnderScriptDump -Path $scriptPath) {
+        $resolvedScriptPath = Resolve-BlenderConfigScriptPath -Path $scriptPath
+        if (Test-PathUnderScriptDump -Path $resolvedScriptPath) {
             continue
         }
         $safeName = Get-SafeName -Value ([string]$button.label)
@@ -582,7 +626,7 @@ $buttonSpecs.Add([pscustomobject]@{
 $wrapperDescriptions = @{}
 $actionDescriptions = @{}
 foreach ($spec in $buttonSpecs.ToArray()) {
-    $normalizedTarget = Get-NormalizedPathKey -Path ([string]$spec.Target)
+    $normalizedTarget = Get-NormalizedPathKey -Path (Resolve-BlenderConfigScriptPath -Path ([string]$spec.Target))
     if (-not [string]::IsNullOrWhiteSpace($normalizedTarget) -and -not [string]::IsNullOrWhiteSpace([string]$spec.Tooltip)) {
         $wrapperDescriptions[$normalizedTarget] = [string]$spec.Tooltip
     }
