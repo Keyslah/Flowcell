@@ -2,12 +2,13 @@
 
 import bpy
 import mathutils
+import importlib
 
 SUPPORTED_TYPES = {"MESH", "CURVE", "SURFACE", "FONT", "META"}
 AXES = "XYZ"
 EPS = 1e-6
 PREFIX = "_flowcell_smart_axis_"
-OP_IDNAME = "object.flowcell_smart_axis_live_modal"
+LIVE_TOOL_ID = "smart_axis_lock"
 
 
 def _ctx(context=None):
@@ -41,6 +42,10 @@ def _is_live(scene):
 
 def _set_live(scene, value):
     scene[_k("live_enabled")] = bool(value)
+
+
+def _bridge_module():
+    return importlib.import_module("flowcell_bridge")
 
 
 def _result(status="FINISHED", message="", changed=0, **extra):
@@ -122,6 +127,16 @@ def active_axes(context=None):
     return [axis for axis, mode in active_modes(context).items() if mode in {"MIN", "MAX"}]
 
 
+def smart_axis_lock_status_payload(context=None, entry=None):
+    del entry
+    return {
+        "live_enabled": _is_live(_scene(context)),
+        "modes": active_modes(context),
+        "active_axes": active_axes(context),
+        "selected": len(selected_target_objects(context)),
+    }
+
+
 def perform_set_baseline(context=None, data=None):
     objs = selected_target_objects(context)
     if not objs:
@@ -129,7 +144,7 @@ def perform_set_baseline(context=None, data=None):
     for obj in objs:
         set_baseline(obj)
     remember_current_scales(objs)
-    return _result("FINISHED", "Baseline set to current bounds on X/Y/Z.", len(objs))
+    return _result("FINISHED", "Baseline set to current bounds on X/Y/Z.", len(objs), **smart_axis_lock_status_payload(context))
 
 
 def perform_toggle_axis(context=None, data=None, axis=None):
@@ -144,7 +159,37 @@ def perform_toggle_axis(context=None, data=None, axis=None):
         for obj in objs:
             ensure_baseline(obj, axis)
         remember_current_scales(objs)
-    return _result("FINISHED", f"{axis} {'cleared' if mode == 'NONE' else 'armed'}.", len(objs), axis=axis, mode=mode)
+    message = {
+        "NONE": f"{axis} cleared.",
+        "MIN": f"{axis} MIN armed.",
+        "MAX": f"{axis} MAX armed.",
+    }.get(mode, f"{axis} updated.")
+    return _result("FINISHED", message, len(objs), axis=axis, mode=mode, **smart_axis_lock_status_payload(context))
+
+
+def perform_set_axis_mode(context=None, data=None, axis=None, mode=None):
+    axis = (axis or (data or {}).get("axis") or "X").upper()
+    mode = (mode or (data or {}).get("mode") or "NONE").upper()
+    if axis not in AXES:
+        return _result("CANCELLED", "Axis must be X, Y, or Z.")
+    if mode not in {"NONE", "MIN", "MAX"}:
+        return _result("CANCELLED", "Mode must be NONE, MIN, or MAX.")
+
+    scn = _scene(context)
+    _set_mode(scn, axis, mode)
+    objs = selected_target_objects(context)
+    if mode in {"MIN", "MAX"}:
+        for obj in objs:
+            ensure_baseline(obj, axis)
+        remember_current_scales(objs)
+    return _result(
+        "FINISHED",
+        f"{axis} {'cleared' if mode == 'NONE' else ('set to ' + mode)}.",
+        len(objs),
+        axis=axis,
+        mode=mode,
+        **smart_axis_lock_status_payload(context),
+    )
 
 
 def perform_toggle_x(context=None, data=None):
@@ -182,79 +227,115 @@ def perform_clear_axis_locks(context=None, data=None):
     return _result("FINISHED", "Axis locks cleared.")
 
 
-def _make_live_operator():
-    class FLOWCELL_OT_smart_axis_live_modal(bpy.types.Operator):
-        bl_idname = OP_IDNAME
-        bl_label = "FlowCell Smart Axis Lock Live"
-        bl_options = {"REGISTER"}
-        _timer = None
-        _last_selection = set()
+def smart_axis_lock_enable(context=None, entry=None):
+    scene = _scene(context)
+    _set_live(scene, True)
+    names = sorted(obj.name for obj in selected_target_objects(context))
+    if entry is not None:
+        entry["selection_names"] = names
 
-        def execute(self, context):
-            if _is_live(context.scene):
-                _set_live(context.scene, False)
-                self._cleanup(context)
-                return {"FINISHED"}
-            _set_live(context.scene, True)
-            self._last_selection = set()
-            remember_current_scales(selected_target_objects(context))
-            self._timer = context.window_manager.event_timer_add(0.10, window=context.window)
-            context.window_manager.modal_handler_add(self)
-            return {"RUNNING_MODAL"}
-
-        def modal(self, context, event):
-            if not _is_live(context.scene):
-                self._cleanup(context)
-                return {"CANCELLED"}
-            if event.type == "TIMER":
-                names = {o.name for o in selected_target_objects(context)}
-                if names != self._last_selection:
-                    self._last_selection = names
-                    objs = [bpy.data.objects[n] for n in names if n in bpy.data.objects]
-                    axes = active_axes(context)
-                    for obj in objs:
-                        ensure_baseline(obj, axes)
-                    remember_current_scales(objs)
-                perform_pin_armed_axes(context, {"force": False})
-            return {"PASS_THROUGH"}
-
-        def _cleanup(self, context):
-            if self._timer is not None:
-                context.window_manager.event_timer_remove(self._timer)
-                self._timer = None
-
-        def cancel(self, context):
-            _set_live(context.scene, False)
-            self._cleanup(context)
-
-    return FLOWCELL_OT_smart_axis_live_modal
+    objs = selected_target_objects(context)
+    axes = active_axes(context)
+    for obj in objs:
+        ensure_baseline(obj, axes)
+    remember_current_scales(objs)
+    return smart_axis_lock_status_payload(context, entry)
 
 
-def _ensure_live_operator_registered():
-    try:
-        getattr(bpy.ops.object, "flowcell_smart_axis_live_modal")
-    except Exception:
-        bpy.utils.register_class(_make_live_operator())
+def smart_axis_lock_disable(context=None, entry=None):
+    _set_live(_scene(context), False)
+    if entry is not None:
+        entry["selection_names"] = []
+    return smart_axis_lock_status_payload(context, entry)
+
+
+def smart_axis_lock_tick(context=None, entry=None):
+    names = {obj.name for obj in selected_target_objects(context)}
+    last_names = set((entry or {}).get("selection_names", []))
+    if names != last_names:
+        objs = [bpy.data.objects[name] for name in names if name in bpy.data.objects]
+        axes = active_axes(context)
+        for obj in objs:
+            ensure_baseline(obj, axes)
+        remember_current_scales(objs)
+        if entry is not None:
+            entry["selection_names"] = sorted(names)
+
+    if active_axes(context):
+        perform_pin_armed_axes(context, {"force": False})
+
+    return smart_axis_lock_status_payload(context, entry)
+
+
+smart_axis_lock_tick.flowcell_status_fn = smart_axis_lock_status_payload
+
+
+def _ensure_live_tool_registered():
+    bridge = _bridge_module()
+    return bridge.register_live_tool(
+        LIVE_TOOL_ID,
+        smart_axis_lock_tick,
+        enable_fn=smart_axis_lock_enable,
+        disable_fn=smart_axis_lock_disable,
+        interval=0.10,
+    )
 
 
 def perform_toggle_live(context=None, data=None):
-    ctx = _ctx(context)
-    _ensure_live_operator_registered()
-    result = bpy.ops.object.flowcell_smart_axis_live_modal()
-    live = _is_live(ctx.scene)
-    return _result("FINISHED", "Live axis pinning started." if live else "Live axis pinning stopped.", live_enabled=live, blender_result=list(result))
+    del data
+    _ensure_live_tool_registered()
+    bridge = _bridge_module()
+    status = bridge.toggle_live_tool(LIVE_TOOL_ID)
+    live = bool(status.get("enabled", False))
+    return _result(
+        "FINISHED",
+        "Live axis pinning started." if live else "Live axis pinning stopped.",
+        live_tool=status,
+        **smart_axis_lock_status_payload(context),
+    )
 
 
 def perform_start_live(context=None, data=None):
-    return _result("FINISHED", "Live already running.", live_enabled=True) if _is_live(_scene(context)) else perform_toggle_live(context, data)
+    del data
+    _ensure_live_tool_registered()
+    bridge = _bridge_module()
+    already_running = bridge.is_live_tool_enabled(LIVE_TOOL_ID)
+    status = bridge.enable_live_tool(LIVE_TOOL_ID)
+    return _result(
+        "FINISHED",
+        "Live already running." if already_running else "Live axis pinning started.",
+        live_tool=status,
+        **smart_axis_lock_status_payload(context),
+    )
 
 
 def perform_stop_live(context=None, data=None):
-    return perform_toggle_live(context, data) if _is_live(_scene(context)) else _result("FINISHED", "Live already stopped.", live_enabled=False)
+    del data
+    _ensure_live_tool_registered()
+    bridge = _bridge_module()
+    already_stopped = not bridge.is_live_tool_enabled(LIVE_TOOL_ID)
+    status = bridge.disable_live_tool(LIVE_TOOL_ID)
+    return _result(
+        "FINISHED",
+        "Live already stopped." if already_stopped else "Live axis pinning stopped.",
+        live_tool=status,
+        **smart_axis_lock_status_payload(context),
+    )
 
 
 def perform_status(context=None, data=None):
-    return _result("FINISHED", "Smart Axis Lock status.", live_enabled=_is_live(_scene(context)), modes=active_modes(context), selected=len(selected_target_objects(context)))
+    del data
+    _ensure_live_tool_registered()
+    bridge = _bridge_module()
+    live_status = bridge.is_live_tool_enabled(LIVE_TOOL_ID)
+    payload = smart_axis_lock_status_payload(context)
+    mode_summary = ", ".join(f"{axis}:{payload['modes'].get(axis, 'NONE')}" for axis in AXES)
+    return _result(
+        "FINISHED",
+        f"Smart Axis Lock status. Live={'on' if live_status else 'off'}. Modes: {mode_summary}. Selected: {payload['selected']}.",
+        live_tool_enabled=live_status,
+        **payload,
+    )
 
 
 def run_flowcell_action(context=None, data=None):
@@ -263,6 +344,7 @@ def run_flowcell_action(context=None, data=None):
     routes = {
         "baseline": perform_set_baseline,
         "set_baseline": perform_set_baseline,
+        "set_axis_mode": perform_set_axis_mode,
         "toggle_axis": perform_toggle_axis,
         "x": perform_toggle_x,
         "toggle_x": perform_toggle_x,

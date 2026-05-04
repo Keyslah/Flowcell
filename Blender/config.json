@@ -49,33 +49,9 @@
       "panel": "utility"
     },
     {
-      "label": "Baseline",
-      "tooltip": "Smart Axis Lock: store selected object bounds as the baseline.",
-      "scriptPath": ".\\FlowCellButtons\\util_smart_axis_baseline.ps1",
-      "panel": "utility"
-    },
-    {
-      "label": "Live",
-      "tooltip": "Smart Axis Lock: toggle live side pinning while scaling.",
-      "scriptPath": ".\\FlowCellButtons\\util_smart_axis_live.ps1",
-      "panel": "utility"
-    },
-    {
-      "label": "X",
-      "tooltip": "Smart Axis Lock: cycle X between none, minus side, plus side.",
-      "scriptPath": ".\\FlowCellButtons\\util_smart_axis_x.ps1",
-      "panel": "utility"
-    },
-    {
-      "label": "Y",
-      "tooltip": "Smart Axis Lock: cycle Y between none, minus side, plus side.",
-      "scriptPath": ".\\FlowCellButtons\\util_smart_axis_y.ps1",
-      "panel": "utility"
-    },
-    {
-      "label": "Z",
-      "tooltip": "Smart Axis Lock: cycle Z between none, minus side, plus side.",
-      "scriptPath": ".\\FlowCellButtons\\util_smart_axis_z.ps1",
+      "label": "smart axis lock",
+      "tooltip": "Baseline stores the current selected-object bounds as the reference values. Live keeps whichever X, Y, or Z sides you have armed pinned while you scale. X, Y, and Z each cycle through none, negative side, and positive side.",
+      "scriptPath": ".\\FlowCellButtons\\util_smart_axis_tools.ps1",
       "panel": "utility"
     },
     {

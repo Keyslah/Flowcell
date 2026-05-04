@@ -343,8 +343,8 @@ $script:MacroLabProgramContext = ''
 $script:ProgramTabStrip = $null
 $script:ProgramTabStatus = $null
 $script:FlowCellMainHoverStatusText = $null
-$script:FlowCellMainHoverDelayMs = 2000
-$script:FlowCellMainHoverHintText = 'Hover over a button for 2 seconds to see what it does.'
+$script:FlowCellMainHoverDelayMs = 1000
+$script:FlowCellMainHoverHintText = 'Hover over a button for 1 second to see what it does.'
 $script:State = $null
 $script:BackendStartedByUi = $false
 $script:DocumentPollTimer = $null
@@ -2363,6 +2363,7 @@ function Save-FlowCellState {
                                             Label = [string]$button.Label
                                             Target = [string]$button.Target
                                             Tooltip = if ($button.PSObject.Properties['Tooltip']) { [string]$button.Tooltip } else { '' }
+                                            CustomTooltip = if ($button.PSObject.Properties['CustomTooltip']) { [string]$button.CustomTooltip } else { '' }
                                             Shortcut = [string]$button.Shortcut
                                             BindingId = [int]$(if ($button.PSObject.Properties['BindingId']) { $button.BindingId } else { 0 })
                                         }
@@ -3739,9 +3740,29 @@ function New-FlowCellPopoutButtonHost {
         ProgramTabId = [int]$ProgramTabId
         PanelId = [string]$PanelId
     }
-    $tileHost.Child = $Content
+    if ((Test-FlowCellMultiButtonToolButton $Button) -and ($Content -is [System.Windows.UIElement])) {
+        $tileHost.Child = New-FlowCellScaledToolHost -Content $Content
+    }
+    else {
+        $tileHost.Child = $Content
+    }
 
     return $tileHost
+}
+
+function New-FlowCellScaledToolHost {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.UIElement]$Content
+    )
+
+    $viewbox = New-Object System.Windows.Controls.Viewbox
+    $viewbox.Stretch = 'Uniform'
+    $viewbox.StretchDirection = 'Both'
+    $viewbox.HorizontalAlignment = 'Stretch'
+    $viewbox.VerticalAlignment = 'Stretch'
+    $viewbox.Child = $Content
+    return $viewbox
 }
 
 function Connect-FlowCellPopoutEntriesInLayout($Entries, [string]$LayoutMode) {
@@ -9075,6 +9096,99 @@ function Show-TextEntryDialog {
     return ''
 }
 
+function Show-MultiLineTextEntryDialog {
+    param(
+        [string]$Title,
+        [string]$Prompt,
+        [string]$InitialValue = '',
+        [string]$AcceptText = 'Save',
+        $OwnerWindow = $null
+    )
+
+    $xaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Edit Text"
+        Width="620"
+        Height="360"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        Background="#FF22272E"
+        Foreground="#FFF2F2F2">
+    <Border Margin="14" Padding="16" Background="#FF2D333B" CornerRadius="14">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock x:Name="PromptTitle" Grid.Row="0" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,10">Edit Text</TextBlock>
+            <TextBlock x:Name="PromptText" Grid.Row="1" Margin="0,0,0,10" TextWrapping="Wrap">Enter text.</TextBlock>
+            <TextBox x:Name="ValueBox"
+                     Grid.Row="2"
+                     Margin="0,0,0,6"
+                     FontSize="15"
+                     Padding="10,8"
+                     AcceptsReturn="True"
+                     AcceptsTab="True"
+                     TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Disabled" />
+            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                <Button x:Name="CancelButton" Width="110" Margin="0,0,10,0" Background="#FF586069">Cancel</Button>
+                <Button x:Name="OkButton" Width="110">Save</Button>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>
+'@
+
+    $reader = New-Object System.Xml.XmlNodeReader ([xml]$xaml)
+    $dialog = [Windows.Markup.XamlReader]::Load($reader)
+    $owner = if ($OwnerWindow -and $OwnerWindow -is [System.Windows.Window]) {
+        $OwnerWindow
+    }
+    else {
+        Get-DialogOwnerWindow
+    }
+    if ($owner) { $dialog.Owner = $owner }
+    $dialog.Title = $Title
+    $dialog.FindName('PromptTitle').Text = $Title
+    $dialog.FindName('PromptText').Text = $Prompt
+    $dialog.FindName('OkButton').Content = $AcceptText
+    $valueBox = $dialog.FindName('ValueBox')
+    $valueBox.Text = [string]$InitialValue
+    $script:__flowCellMultiLineTextEntry = ''
+
+    $accept = {
+        $script:__flowCellMultiLineTextEntry = [string]$valueBox.Text
+        $dialog.DialogResult = $true
+        $dialog.Close()
+    }
+
+    $dialog.FindName('OkButton').Add_Click($accept)
+    $dialog.FindName('CancelButton').Add_Click({
+        $dialog.DialogResult = $false
+        $dialog.Close()
+    })
+    $valueBox.Add_KeyDown({
+        param($sender, $eventArgs)
+        if ($eventArgs.Key -eq 'Enter' -and [System.Windows.Input.Keyboard]::Modifiers -eq [System.Windows.Input.ModifierKeys]::Control) {
+            & $accept
+            $eventArgs.Handled = $true
+        }
+    })
+    $dialog.Add_ContentRendered({
+        $valueBox.Focus() | Out-Null
+        $valueBox.CaretIndex = $valueBox.Text.Length
+    })
+
+    if ($dialog.ShowDialog()) { return [string]$script:__flowCellMultiLineTextEntry }
+    return $null
+}
+
 function Resolve-FlowCellProgramExecutablePath([string]$ExePath) {
     if ([string]::IsNullOrWhiteSpace($ExePath)) {
         throw 'Program EXE path is required.'
@@ -9970,9 +10084,17 @@ function Test-FlowCellFlattenRevolveToolButton($Button) {
     return ([System.IO.Path]::GetFileName($target) -ieq 'util_flatten_revolve_tools.ps1')
 }
 
+function Test-FlowCellSmartAxisToolButton($Button) {
+    if ($null -eq $Button) { return $false }
+    if ([string]$Button.Kind -ne 'script') { return $false }
+    $target = [string]$Button.Target
+    if ([string]::IsNullOrWhiteSpace($target)) { return $false }
+    return ([System.IO.Path]::GetFileName($target) -ieq 'util_smart_axis_tools.ps1')
+}
+
 function Test-FlowCellMultiButtonToolButton($Button) {
     if ($null -eq $Button) { return $false }
-    return ((Test-FlowCellAlignmentToolButton $Button) -or (Test-FlowCellFlattenRevolveToolButton $Button))
+    return ((Test-FlowCellAlignmentToolButton $Button) -or (Test-FlowCellFlattenRevolveToolButton $Button) -or (Test-FlowCellSmartAxisToolButton $Button))
 }
 
 function Get-FlowCellBlenderConfig {
@@ -10038,9 +10160,65 @@ function Get-FlowCellScriptTopDescription([string]$ScriptPath) {
     return ''
 }
 
+function New-FlowCellHoverToolTip([string]$Text) {
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+
+    $tooltip = New-Object System.Windows.Controls.ToolTip
+    $tooltip.Placement = [System.Windows.Controls.Primitives.PlacementMode]::Mouse
+    $tooltip.HorizontalOffset = 14
+    $tooltip.VerticalOffset = 18
+    $tooltip.HasDropShadow = $true
+    $tooltip.Background = (New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(28,34,42)))
+    $tooltip.BorderBrush = (New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(116,196,255)))
+    $tooltip.BorderThickness = '1'
+    $tooltip.Padding = '10,8'
+    $tooltip.MaxWidth = 360
+
+    $textBlock = New-Object System.Windows.Controls.TextBlock
+    $textBlock.Text = ([string]$Text).Trim()
+    $textBlock.TextWrapping = 'Wrap'
+    $textBlock.MaxWidth = 340
+    $textBlock.Foreground = [System.Windows.Media.Brushes]::White
+    $textBlock.FontSize = 12
+    $textBlock.LineHeight = 17
+    $tooltip.Content = $textBlock
+
+    return $tooltip
+}
+
+function Set-FlowCellHoverToolTip {
+    param(
+        $Element,
+        [string]$Text,
+        [int]$DelayMs = 0
+    )
+
+    if ($null -eq $Element -or -not ($Element -is [System.Windows.FrameworkElement])) { return }
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        $Element.ToolTip = $null
+        return
+    }
+
+    $resolvedDelayMs = if ($DelayMs -gt 0) {
+        $DelayMs
+    }
+    elseif ([int]$script:FlowCellMainHoverDelayMs -gt 0) {
+        [int]$script:FlowCellMainHoverDelayMs
+    }
+    else {
+        2000
+    }
+
+    $Element.ToolTip = New-FlowCellHoverToolTip -Text $Text
+    [System.Windows.Controls.ToolTipService]::SetInitialShowDelay($Element, $resolvedDelayMs)
+    [System.Windows.Controls.ToolTipService]::SetShowDuration($Element, 30000)
+    [System.Windows.Controls.ToolTipService]::SetBetweenShowDelay($Element, 250)
+    [System.Windows.Controls.ToolTipService]::SetShowOnDisabled($Element, $true)
+}
+
 function Resolve-FlowCellButtonTooltip($Button, $ProgramTab) {
-    if ($Button -and $Button.PSObject.Properties['Tooltip'] -and -not [string]::IsNullOrWhiteSpace([string]$Button.Tooltip)) {
-        return [string]$Button.Tooltip
+    if ($Button -and $Button.PSObject.Properties['CustomTooltip'] -and -not [string]::IsNullOrWhiteSpace([string]$Button.CustomTooltip)) {
+        return [string]$Button.CustomTooltip
     }
 
     $programKey = if ($ProgramTab) { Get-ProgramLabelKey ([string]$ProgramTab.Label) } else { '' }
@@ -10071,6 +10249,10 @@ function Resolve-FlowCellButtonTooltip($Button, $ProgramTab) {
         catch {
             Write-UiLog ('Blender tooltip resolve failed: {0}' -f $_.Exception.Message)
         }
+    }
+
+    if ($Button -and $Button.PSObject.Properties['Tooltip'] -and -not [string]::IsNullOrWhiteSpace([string]$Button.Tooltip)) {
+        return [string]$Button.Tooltip
     }
 
     if ($Button -and [string]$Button.Kind -eq 'macro') {
@@ -10456,6 +10638,503 @@ function New-FlowCellAlignmentToolControl {
     return $shell
 }
 
+function Invoke-FlowCellSmartAxisToolCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Command,
+        [string]$Axis = '',
+        [string]$Mode = ''
+    )
+
+    try {
+        Set-ActionStatus ('Running Smart Axis Lock: {0}...' -f $Command)
+        $data = @{
+            action = [string]$Command
+        }
+        if (-not [string]::IsNullOrWhiteSpace($Axis)) {
+            $data.axis = [string]$Axis
+        }
+        if (-not [string]::IsNullOrWhiteSpace($Mode)) {
+            $data.mode = [string]$Mode
+        }
+
+        $response = Invoke-FlowCellBlenderBridgeRequest -Action 'custom_util_smart_axis_lock' -Data $data
+        $statusText = if ($response.PSObject.Properties['message']) { [string]$response.message } else { 'Smart Axis Lock updated.' }
+        if ([string]::IsNullOrWhiteSpace($statusText)) {
+            $statusText = 'Smart Axis Lock updated.'
+        }
+        Set-Content -LiteralPath $script:LastActionStatusPath -Value $statusText -Encoding UTF8
+        Set-ActionStatus $statusText
+        return [pscustomobject]@{
+            Succeeded = $true
+            Message = $statusText
+            Response = $response
+        }
+    }
+    catch {
+        $message = $_.Exception.Message
+        if (
+            $message -match 'Unsupported action:\s*custom_util_smart_axis_lock' -or
+            $message -match "register_live_tool" -or
+            $message -match 'No module named'
+        ) {
+            $message = 'Reload the FlowCell Blender addon or restart Blender once.'
+        }
+        return [pscustomobject]@{
+            Succeeded = $false
+            Message = $message
+            Response = $null
+        }
+    }
+}
+
+function New-FlowCellSmartAxisToolControl {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Button,
+        [double]$Width = 292,
+        [double]$FontSize = 12,
+        [scriptblock]$StatusAction = $null,
+        [scriptblock]$CyclePanelAction = $null,
+        [scriptblock]$DragWindowAction = $null,
+        [scriptblock]$CloseWindowAction = $null,
+        [switch]$HideTitle
+    )
+
+    $normalBrush = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(64,70,78))
+    $minBrush = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(92,169,255))
+    $maxBrush = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(121,255,51))
+    $liveActiveBrush = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(220,82,82))
+    $normalForeground = [System.Windows.Media.Brushes]::White
+    $activeForeground = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(16,20,12))
+    $liveActiveForeground = [System.Windows.Media.Brushes]::White
+    $existingSmartAxisUiState = Get-Variable -Name FlowCellSmartAxisToolUiState -Scope Script -ErrorAction SilentlyContinue
+    if ($null -eq $existingSmartAxisUiState -or -not ($existingSmartAxisUiState.Value -is [hashtable])) {
+        $script:FlowCellSmartAxisToolUiState = @{}
+    }
+    $smartAxisUiState = $script:FlowCellSmartAxisToolUiState
+    foreach ($entry in @(
+        @{ Key = 'Payload'; Value = $null },
+        @{ Key = 'LastStatusAttemptUtc'; Value = [datetime]::MinValue },
+        @{ Key = 'LastStatusFailed'; Value = $false },
+        @{ Key = 'Modes'; Value = @{ X = 'NONE'; Y = 'NONE'; Z = 'NONE' } }
+    )) {
+        if (-not $smartAxisUiState.ContainsKey($entry.Key)) {
+            $smartAxisUiState[$entry.Key] = $entry.Value
+        }
+    }
+
+    $shell = New-Object System.Windows.Controls.Border
+    $shell.Width = if ([double]::IsNaN($Width) -or $Width -le 0) { [double]::NaN } else { $Width }
+    $shell.MinWidth = 0
+    $shell.Padding = '6'
+    $shell.Background = (New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(38,45,54)))
+    $shell.BorderBrush = (New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(116,196,255)))
+    $shell.BorderThickness = '1'
+    $shell.CornerRadius = '0'
+    $shell.HorizontalAlignment = 'Stretch'
+    $shell.VerticalAlignment = 'Top'
+
+    $content = New-Object System.Windows.Controls.StackPanel
+    $content.Orientation = 'Vertical'
+    $shell.Child = $content
+
+    $showHeader = (-not $HideTitle) -or ($CloseWindowAction -is [scriptblock]) -or ($DragWindowAction -is [scriptblock]) -or ($CyclePanelAction -is [scriptblock])
+    if ($showHeader) {
+        $header = New-Object System.Windows.Controls.DockPanel
+        $header.LastChildFill = $true
+        $header.Margin = '0,0,0,6'
+        [void]$content.Children.Add($header)
+
+        if ($CloseWindowAction -is [scriptblock]) {
+            $closeButton = New-FlowCellAlignmentMiniButton -Text 'x' -Width 18 -Height 18 -FontSize ([Math]::Max($FontSize - 1, 9))
+            $closeButton.Margin = '4,0,0,0'
+            $closeButton.Padding = '0'
+            [System.Windows.Controls.DockPanel]::SetDock($closeButton, 'Right')
+            [void]$header.Children.Add($closeButton)
+            $closeButton.Add_Click({ & $CloseWindowAction }.GetNewClosure())
+        }
+
+        if ($DragWindowAction -is [scriptblock]) {
+            $dragButton = New-FlowCellAlignmentMiniButton -Text '' -Width 14 -Height 14 -FontSize ([Math]::Max($FontSize - 2, 8))
+            $dragButton.Margin = '4,2,0,0'
+            $dragButton.Padding = '0'
+            $dragButton.Opacity = 0.5
+            $dragButton.Cursor = 'SizeAll'
+            $dragButton.Background = (New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(138,150,168)))
+            $dragButton.BorderBrush = (New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(215,222,232)))
+            [System.Windows.Controls.DockPanel]::SetDock($dragButton, 'Right')
+            [void]$header.Children.Add($dragButton)
+            $dragButton.Add_PreviewMouseLeftButtonDown({ & $DragWindowAction }.GetNewClosure())
+        }
+
+        if ($CyclePanelAction -is [scriptblock]) {
+            $cycleButton = New-FlowCellAlignmentMiniButton -Text '[]' -Width 20 -Height 18 -FontSize ([Math]::Max($FontSize - 2, 8))
+            $cycleButton.Margin = '0,0,4,0'
+            $cycleButton.Padding = '0'
+            [System.Windows.Controls.DockPanel]::SetDock($cycleButton, 'Right')
+            [void]$header.Children.Add($cycleButton)
+            $cycleButton.Add_Click({ & $CyclePanelAction }.GetNewClosure())
+        }
+
+        if (-not $HideTitle) {
+            $title = New-Object System.Windows.Controls.TextBlock
+            $title.Text = 'Smart Axis Lock'
+            $title.FontSize = ($FontSize + 1)
+            $title.FontWeight = 'SemiBold'
+            $title.Foreground = [System.Windows.Media.Brushes]::White
+            $title.VerticalAlignment = 'Center'
+            [void]$header.Children.Add($title)
+        }
+    }
+
+    $topRow = New-Object System.Windows.Controls.Grid
+    $topRow.Margin = '0,0,0,4'
+    foreach ($nullValue in 1..5) {
+        [void]$topRow.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width = (New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)) }))
+    }
+    [void]$content.Children.Add($topRow)
+
+    $baselineButton = New-FlowCellAlignmentMiniButton -Text 'Baseline' -Width ([double]::NaN) -Height 24 -FontSize $FontSize
+    $baselineButton.Margin = '0,0,2,0'
+    $baselineButton.HorizontalAlignment = 'Stretch'
+    [System.Windows.Controls.Grid]::SetColumn($baselineButton, 0)
+    [void]$topRow.Children.Add($baselineButton)
+
+    $liveButton = New-FlowCellAlignmentMiniButton -Text 'Live' -Width ([double]::NaN) -Height 24 -FontSize $FontSize
+    $liveButton.Margin = '0,0,2,0'
+    $liveButton.HorizontalAlignment = 'Stretch'
+    [System.Windows.Controls.Grid]::SetColumn($liveButton, 1)
+    [void]$topRow.Children.Add($liveButton)
+
+    $axisButtons = @{}
+    $axisButtonSpecs = @(
+        @{ Axis = 'X'; Column = 2 },
+        @{ Axis = 'Y'; Column = 3 },
+        @{ Axis = 'Z'; Column = 4 }
+    )
+    foreach ($axisSpec in @($axisButtonSpecs)) {
+        $axis = [string]$axisSpec.Axis
+        $axisButton = New-FlowCellAlignmentMiniButton -Text ('{0} .' -f $axis) -Width ([double]::NaN) -Height 24 -FontSize $FontSize
+        $axisButton.Margin = if ([int]$axisSpec.Column -lt 4) { '0,0,2,0' } else { '0' }
+        $axisButton.HorizontalAlignment = 'Stretch'
+        $axisButton.FontFamily = 'Consolas'
+        $axisButtons[$axis] = $axisButton
+        [System.Windows.Controls.Grid]::SetColumn($axisButton, [int]$axisSpec.Column)
+        [void]$topRow.Children.Add($axisButton)
+    }
+
+    $controlState = @{
+        Suppress = $false
+        LiveEnabled = $false
+    }
+
+    $smartAxisToolTooltip = 'Baseline stores the current selected-object bounds as the reference values. Live keeps whichever X, Y, or Z sides you have armed pinned while you scale. X, Y, and Z each cycle through none, negative side, and positive side.'
+    foreach ($toolElement in @($shell, $content, $topRow, $baselineButton, $liveButton, $axisButtons['X'], $axisButtons['Y'], $axisButtons['Z'])) {
+        & Set-FlowCellHoverToolTip -Element $toolElement -Text $smartAxisToolTooltip
+    }
+
+    $applyLiveButtonState = {
+        param([bool]$IsEnabled)
+        $controlState.LiveEnabled = $IsEnabled
+        $liveButton.Background = if ($IsEnabled) { $liveActiveBrush } else { $normalBrush }
+        $liveButton.Foreground = if ($IsEnabled) { $liveActiveForeground } else { $normalForeground }
+    }.GetNewClosure()
+
+    $responseHasState = {
+        param($ResponsePayload)
+        if ($null -eq $ResponsePayload) { return $false }
+        foreach ($propertyName in @('modes', 'live_enabled', 'live_tool_enabled', 'active_axes', 'selected')) {
+            if ($ResponsePayload.PSObject.Properties[$propertyName]) {
+                return $true
+            }
+        }
+        return $false
+    }.GetNewClosure()
+
+    $responseFromMessage = {
+        param($ResponsePayload)
+
+        if ($null -eq $ResponsePayload) { return $null }
+        $messageText = ''
+        if ($ResponsePayload.PSObject.Properties['message']) {
+            $messageText = [string]$ResponsePayload.message
+        }
+        if ([string]::IsNullOrWhiteSpace($messageText)) { return $null }
+
+        $parsedModes = @{ X = 'NONE'; Y = 'NONE'; Z = 'NONE' }
+        $matchedState = $false
+
+        if ($messageText -match 'Live=(on|off)') {
+            $liveEnabled = ($matches[1] -eq 'on')
+            $matchedState = $true
+        }
+        else {
+            $liveEnabled = [bool]$controlState.LiveEnabled
+        }
+
+        if ($messageText -match 'Modes:\s*X:(NONE|MIN|MAX),\s*Y:(NONE|MIN|MAX),\s*Z:(NONE|MIN|MAX)') {
+            $parsedModes['X'] = [string]$matches[1]
+            $parsedModes['Y'] = [string]$matches[2]
+            $parsedModes['Z'] = [string]$matches[3]
+            $matchedState = $true
+        }
+        elseif ($messageText -match '^([XYZ])\s+(MIN|MAX)\s+armed\.$') {
+            $axisName = [string]$matches[1]
+            $parsedModes['X'] = [string]$smartAxisUiState['Modes']['X']
+            $parsedModes['Y'] = [string]$smartAxisUiState['Modes']['Y']
+            $parsedModes['Z'] = [string]$smartAxisUiState['Modes']['Z']
+            $parsedModes[$axisName] = [string]$matches[2]
+            $matchedState = $true
+        }
+        elseif ($messageText -match '^([XYZ])\s+cleared\.$') {
+            $axisName = [string]$matches[1]
+            $parsedModes['X'] = [string]$smartAxisUiState['Modes']['X']
+            $parsedModes['Y'] = [string]$smartAxisUiState['Modes']['Y']
+            $parsedModes['Z'] = [string]$smartAxisUiState['Modes']['Z']
+            $parsedModes[$axisName] = 'NONE'
+            $matchedState = $true
+        }
+        else {
+            $parsedModes['X'] = [string]$smartAxisUiState['Modes']['X']
+            $parsedModes['Y'] = [string]$smartAxisUiState['Modes']['Y']
+            $parsedModes['Z'] = [string]$smartAxisUiState['Modes']['Z']
+        }
+
+        if ($messageText -match 'Selected:\s*(\d+)') {
+            $selectedCount = [int]$matches[1]
+            $matchedState = $true
+        }
+        elseif ($smartAxisUiState['Payload'] -and $smartAxisUiState['Payload'].PSObject.Properties['selected']) {
+            $selectedCount = [int]$smartAxisUiState['Payload'].selected
+        }
+        else {
+            $selectedCount = 0
+        }
+
+        if ($messageText -match 'Live axis pinning started\.|Live already running\.') {
+            $liveEnabled = $true
+            $matchedState = $true
+        }
+        elseif ($messageText -match 'Live axis pinning stopped\.|Live already stopped\.') {
+            $liveEnabled = $false
+            $matchedState = $true
+        }
+
+        if (-not $matchedState) { return $null }
+
+        $activeAxes = @()
+        foreach ($axisName in @('X', 'Y', 'Z')) {
+            if ([string]$parsedModes[$axisName] -in @('MIN', 'MAX')) {
+                $activeAxes += $axisName
+            }
+        }
+
+        return [pscustomobject]@{
+            live_enabled = [bool]$liveEnabled
+            modes = [pscustomobject]@{
+                X = [string]$parsedModes['X']
+                Y = [string]$parsedModes['Y']
+                Z = [string]$parsedModes['Z']
+            }
+            active_axes = @($activeAxes)
+            selected = [int]$selectedCount
+            message = $messageText
+        }
+    }.GetNewClosure()
+
+    $applyResponse = {
+        param($ResponsePayload)
+        if ($null -eq $ResponsePayload) { return }
+
+        $controlState.Suppress = $true
+        try {
+            $liveEnabled = $false
+            if ($ResponsePayload.PSObject.Properties['live_enabled']) {
+                $liveEnabled = [bool]$ResponsePayload.live_enabled
+            }
+            elseif ($ResponsePayload.PSObject.Properties['live_tool_enabled']) {
+                $liveEnabled = [bool]$ResponsePayload.live_tool_enabled
+            }
+            & $applyLiveButtonState $liveEnabled
+
+            $modes = @{}
+            if ($ResponsePayload.PSObject.Properties['modes'] -and $null -ne $ResponsePayload.modes) {
+                if ($ResponsePayload.modes -is [System.Collections.IDictionary]) {
+                    foreach ($key in @($ResponsePayload.modes.Keys)) {
+                        $modes[[string]$key] = [string]$ResponsePayload.modes[$key]
+                    }
+                }
+                else {
+                    foreach ($property in @($ResponsePayload.modes.PSObject.Properties)) {
+                        $modes[[string]$property.Name] = [string]$property.Value
+                    }
+                }
+            }
+            foreach ($axis in @('X', 'Y', 'Z')) {
+                $modeValue = if ($modes.ContainsKey($axis)) { [string]$modes[$axis] } else { 'NONE' }
+                $smartAxisUiState['Modes'][$axis] = $modeValue
+                $axisButton = $axisButtons[$axis]
+                switch ($modeValue) {
+                    'MIN' {
+                        $axisButton.Content = ('{0} -' -f $axis)
+                        $axisButton.Background = $minBrush
+                        $axisButton.Foreground = $activeForeground
+                    }
+                    'MAX' {
+                        $axisButton.Content = ('{0} +' -f $axis)
+                        $axisButton.Background = $maxBrush
+                        $axisButton.Foreground = $activeForeground
+                    }
+                    default {
+                        $axisButton.Content = ('{0} .' -f $axis)
+                        $axisButton.Background = $normalBrush
+                        $axisButton.Foreground = $normalForeground
+                    }
+                }
+            }
+        }
+        finally {
+            $controlState.Suppress = $false
+        }
+    }.GetNewClosure()
+
+    $applyOptimisticAxisState = {
+        param([string]$AxisName)
+
+        $currentModes = $smartAxisUiState['Modes']
+        if ($null -eq $currentModes -or -not ($currentModes -is [hashtable])) {
+            $currentModes = @{ X = 'NONE'; Y = 'NONE'; Z = 'NONE' }
+            $smartAxisUiState['Modes'] = $currentModes
+        }
+
+        $currentMode = if ($currentModes.ContainsKey($AxisName)) { [string]$currentModes[$AxisName] } else { 'NONE' }
+        $nextMode = switch ($currentMode) {
+            'NONE' { 'MIN' }
+            'MIN' { 'MAX' }
+            default { 'NONE' }
+        }
+        $currentModes[$AxisName] = $nextMode
+
+        $selectedCount = 0
+        $activeAxes = @()
+        $payload = $smartAxisUiState['Payload']
+        if ($payload -and $payload.PSObject.Properties['selected']) {
+            $selectedCount = [int]$payload.selected
+        }
+        foreach ($axis in @('X', 'Y', 'Z')) {
+            $modeValue = if ($currentModes.ContainsKey($axis)) { [string]$currentModes[$axis] } else { 'NONE' }
+            if ($modeValue -in @('MIN', 'MAX')) {
+                $activeAxes += $axis
+            }
+        }
+
+        $optimisticPayload = [pscustomobject]@{
+            live_enabled = [bool]$controlState.LiveEnabled
+            modes = [pscustomobject]@{
+                X = [string]$currentModes['X']
+                Y = [string]$currentModes['Y']
+                Z = [string]$currentModes['Z']
+            }
+            active_axes = @($activeAxes)
+            selected = $selectedCount
+        }
+        $smartAxisUiState['Payload'] = $optimisticPayload
+        & $applyResponse $optimisticPayload
+    }.GetNewClosure()
+
+    $runCommand = {
+        param(
+            [string]$CommandName,
+            [string]$AxisName = '',
+            [bool]$RefreshOnly = $false
+        )
+
+        $result = Invoke-FlowCellSmartAxisToolCommand -Command $CommandName -Axis $AxisName
+        $message = [string]$result.Message
+        if ($StatusAction -is [scriptblock]) { & $StatusAction $message }
+        if (-not $result.Succeeded) {
+            if ($RefreshOnly -or [string]$CommandName -eq 'status') {
+                $smartAxisUiState['LastStatusAttemptUtc'] = (Get-Date).ToUniversalTime()
+                $smartAxisUiState['LastStatusFailed'] = $true
+            }
+            else {
+                Set-ActionStatus $message
+                Write-UiLog ('Smart Axis Lock command failed: {0}' -f $message)
+            }
+            return
+        }
+
+        $effectiveResponse = if (& $responseHasState $result.Response) { $result.Response } else { & $responseFromMessage $result.Response }
+        if ($effectiveResponse) {
+            $smartAxisUiState['Payload'] = $effectiveResponse
+            $smartAxisUiState['LastStatusAttemptUtc'] = (Get-Date).ToUniversalTime()
+            $smartAxisUiState['LastStatusFailed'] = $false
+            & $applyResponse $effectiveResponse
+        }
+        elseif ($RefreshOnly -or $CommandName -ne 'status') {
+            $statusResult = Invoke-FlowCellSmartAxisToolCommand -Command 'status'
+            $effectiveStatusResponse = if (& $responseHasState $statusResult.Response) { $statusResult.Response } else { & $responseFromMessage $statusResult.Response }
+            if ($statusResult.Succeeded -and $effectiveStatusResponse) {
+                $smartAxisUiState['Payload'] = $effectiveStatusResponse
+                $smartAxisUiState['LastStatusAttemptUtc'] = (Get-Date).ToUniversalTime()
+                $smartAxisUiState['LastStatusFailed'] = $false
+                & $applyResponse $effectiveStatusResponse
+            }
+            else {
+                $smartAxisUiState['LastStatusAttemptUtc'] = (Get-Date).ToUniversalTime()
+                $smartAxisUiState['LastStatusFailed'] = $true
+                if (-not $RefreshOnly -and [string]$CommandName -ne 'status' -and $StatusAction -is [scriptblock] -and $statusResult) {
+                    & $StatusAction ([string]$statusResult.Message)
+                }
+            }
+        }
+    }.GetNewClosure()
+
+    $baselineButton.Add_Click({
+        & $runCommand 'baseline'
+    }.GetNewClosure())
+
+    $liveButton.Add_Click({
+        if ([bool]$controlState.Suppress) { return }
+        if ([bool]$controlState.LiveEnabled) {
+            & $applyLiveButtonState $false
+            & $runCommand 'stop_live'
+        }
+        else {
+            & $applyLiveButtonState $true
+            & $runCommand 'start_live'
+        }
+    }.GetNewClosure())
+
+    foreach ($axis in @('X', 'Y', 'Z')) {
+        $axisButton = $axisButtons[$axis]
+        $axisName = [string]$axis
+        $axisButton.Add_Click({
+            if ([bool]$controlState.Suppress) { return }
+            & $applyOptimisticAxisState $axisName
+            & $runCommand 'toggle_axis' $axisName
+        }.GetNewClosure())
+    }
+
+    if ($null -ne $smartAxisUiState['Payload']) {
+        & $applyResponse $smartAxisUiState['Payload']
+    }
+    else {
+        $lastStatusAttemptUtc = [datetime]$smartAxisUiState['LastStatusAttemptUtc']
+        $secondsSinceAttempt = if ($lastStatusAttemptUtc -gt [datetime]::MinValue) {
+            ((Get-Date).ToUniversalTime() - $lastStatusAttemptUtc).TotalSeconds
+        }
+        else {
+            [double]::PositiveInfinity
+        }
+        if ($secondsSinceAttempt -ge 5.0) {
+            & $runCommand 'status' -RefreshOnly $true
+        }
+    }
+    return $shell
+}
+
 function Invoke-FlowCellFlattenRevolveCommand {
     param(
         [Parameter(Mandatory = $true)]
@@ -10803,6 +11482,8 @@ function New-FlowCellMainToolWrapper {
     $hoverPreviousText = ''
     $hoverDisplayed = $false
     $hoverMessage = $trimmedTooltip
+    $showEmbeddedToolLabel = (Test-FlowCellMultiButtonToolButton $Button)
+    $embeddedToolLabel = if ($showEmbeddedToolLabel -and -not [string]::IsNullOrWhiteSpace([string]$Button.Label)) { [string]$Button.Label } else { '' }
 
     $wrapper = New-Object System.Windows.Controls.Border
     $wrapper.Margin = '0,0,12,12'
@@ -10818,7 +11499,9 @@ function New-FlowCellMainToolWrapper {
     $wrapper.Tag = [pscustomobject]@{
         ButtonId = $buttonId
         Button = $Button
+        ProgramTab = $ProgramTab
         ProgramTabId = $programTabId
+        Panel = $Panel
         PanelId = $panelId
     }
 
@@ -10847,8 +11530,6 @@ function New-FlowCellMainToolWrapper {
         $checkbox.Height = 20
         $checkbox.Margin = '0,3,6,0'
         $checkbox.VerticalAlignment = 'Top'
-        $checkbox.ToolTip = $trimmedTooltip
-        [System.Windows.Controls.ToolTipService]::SetShowOnDisabled($checkbox, $true)
         $checkbox.IsChecked = [bool]$isSelected
         $checkbox.IsEnabled = $true
         $checkbox.Tag = [pscustomobject]@{
@@ -10856,6 +11537,7 @@ function New-FlowCellMainToolWrapper {
             PanelId = $panelId
             ButtonId = $buttonId
         }
+        & Set-FlowCellHoverToolTip -Element $checkbox -Text $trimmedTooltip -DelayMs $hoverDelayMs
 
         $checkbox.Add_Checked({
             param($sender, $eventArgs)
@@ -10873,11 +11555,39 @@ function New-FlowCellMainToolWrapper {
         [void]$row.Children.Add($checkbox)
     }
 
+    $bodyHost = New-Object System.Windows.Controls.StackPanel
+    $bodyHost.Orientation = 'Vertical'
+    $bodyHost.VerticalAlignment = 'Top'
+    [void]$row.Children.Add($bodyHost)
+
+    if ($showEmbeddedToolLabel -and -not [string]::IsNullOrWhiteSpace($embeddedToolLabel)) {
+        $toolLabel = New-Object System.Windows.Controls.TextBlock
+        $toolLabel.Text = $embeddedToolLabel
+        $toolLabel.Margin = '2,0,0,6'
+        $toolLabel.Foreground = [System.Windows.Media.Brushes]::White
+        $toolLabel.FontSize = 12
+        $toolLabel.FontWeight = 'SemiBold'
+        $toolLabel.TextTrimming = 'CharacterEllipsis'
+        [void]$bodyHost.Children.Add($toolLabel)
+    }
+
     if ($Content -is [System.Windows.UIElement]) {
         $Content.IsHitTestVisible = (-not $ArrangeModeEnabled)
         $Content.Opacity = if ($ArrangeModeEnabled) { 0.95 } else { 1.0 }
     }
-    [void]$row.Children.Add($Content)
+    if ($showEmbeddedToolLabel -and ($Content -is [System.Windows.UIElement])) {
+        [void]$bodyHost.Children.Add((New-FlowCellScaledToolHost -Content $Content))
+    }
+    else {
+        [void]$bodyHost.Children.Add($Content)
+    }
+
+    if (-not $ArrangeModeEnabled -and -not [string]::IsNullOrWhiteSpace($hoverMessage)) {
+        & Set-FlowCellHoverToolTip -Element $wrapper -Text $hoverMessage -DelayMs $hoverDelayMs
+        if ($Content -is [System.Windows.FrameworkElement]) {
+            & Set-FlowCellHoverToolTip -Element $Content -Text $hoverMessage -DelayMs $hoverDelayMs
+        }
+    }
 
     if (-not $ArrangeModeEnabled -and $hoverStatusText -and -not [string]::IsNullOrWhiteSpace($hoverMessage)) {
         $hoverTimer = New-Object System.Windows.Threading.DispatcherTimer
@@ -11106,6 +11816,23 @@ function Rename-FlowCellButton([int]$ProgramTabId, [string]$PanelId, [string]$Bu
     $button = @($panel.Buttons | Where-Object { [string]$_.Id -eq [string]$ButtonId } | Select-Object -First 1)
     if (@($button).Count -eq 0) { return $false }
     $button[0].Label = $NewLabel.Trim()
+    Save-FlowCellState
+    return $true
+}
+
+function Set-FlowCellButtonCustomTooltip([int]$ProgramTabId, [string]$PanelId, [string]$ButtonId, [string]$NewTooltip) {
+    $programState = Get-FlowCellProgramState -ProgramTabId $ProgramTabId
+    $panel = Get-FlowCellPanel -ProgramState $programState -PanelId $PanelId
+    if ($null -eq $programState -or $null -eq $panel) { return $false }
+    $button = @($panel.Buttons | Where-Object { [string]$_.Id -eq [string]$ButtonId } | Select-Object -First 1)
+    if (@($button).Count -eq 0) { return $false }
+
+    if ($button[0].PSObject.Properties['CustomTooltip']) {
+        $button[0].CustomTooltip = [string]$NewTooltip
+    }
+    else {
+        Add-Member -InputObject $button[0] -NotePropertyName 'CustomTooltip' -NotePropertyValue ([string]$NewTooltip) -Force
+    }
     Save-FlowCellState
     return $true
 }
@@ -11568,7 +12295,7 @@ function Show-FlowCellButtonPopoutWindow {
         $availableHeight = [Math]::Max($(if ([double]$window.ActualHeight -gt 0) { [double]$window.ActualHeight } else { [double]$window.Height }), 70.0)
 
         if ([string]$resolvedLayoutMode -eq 'Group') {
-            $container = New-Object System.Windows.Controls.UniformGrid
+            $container = New-Object System.Windows.Controls.Primitives.UniformGrid
             $container.Margin = '0'
 
             $buttonCount = [Math]::Max(@($resolvedEntries).Count, 1)
@@ -11601,6 +12328,39 @@ function Show-FlowCellButtonPopoutWindow {
 
             foreach ($entry in @($resolvedEntries)) {
                 $button = $entry.Button
+                if (Test-FlowCellAlignmentToolButton $button) {
+                    try {
+                        $alignmentControl = New-FlowCellAlignmentToolControl -Button $button -Width ([Math]::Max([double][Math]::Round($cellWidthForFont - 6, 2), 260)) -FontSize ([Math]::Max([double][Math]::Round(12 * $buttonScale, 1), 8))
+                        $alignmentControl.Margin = '0'
+                        [void]$container.Children.Add((New-FlowCellScaledToolHost -Content $alignmentControl))
+                        continue
+                    }
+                    catch {
+                        Write-UiLog ('Alignment control render failed in grouped tool popout: {0} | {1}' -f $_.Exception.Message, $_.InvocationInfo.PositionMessage)
+                    }
+                }
+                if (Test-FlowCellFlattenRevolveToolButton $button) {
+                    try {
+                        $flattenRevolveControl = New-FlowCellFlattenRevolveToolControl -Button $button -Width ([Math]::Max([double][Math]::Round($cellWidthForFont - 6, 2), 290)) -FontSize ([Math]::Max([double][Math]::Round(12 * $buttonScale, 1), 8))
+                        $flattenRevolveControl.Margin = '0'
+                        [void]$container.Children.Add((New-FlowCellScaledToolHost -Content $flattenRevolveControl))
+                        continue
+                    }
+                    catch {
+                        Write-UiLog ('Flatten/revolve control render failed in grouped tool popout: {0} | {1}' -f $_.Exception.Message, $_.InvocationInfo.PositionMessage)
+                    }
+                }
+                if (Test-FlowCellSmartAxisToolButton $button) {
+                    try {
+                        $smartAxisControl = New-FlowCellSmartAxisToolControl -Button $button -Width ([Math]::Round(292 * $buttonScale, 2)) -FontSize ([Math]::Max([double][Math]::Round(12 * $buttonScale, 1), 8)) -HideTitle
+                        $smartAxisControl.Margin = '0'
+                        [void]$container.Children.Add((New-FlowCellScaledToolHost -Content $smartAxisControl))
+                        continue
+                    }
+                    catch {
+                        Write-UiLog ('Smart Axis Lock control render failed in grouped tool popout: {0} | {1}' -f $_.Exception.Message, $_.InvocationInfo.PositionMessage)
+                    }
+                }
                 $buttonControl = New-Object System.Windows.Controls.Button
                 $buttonControl.Width = [double]::NaN
                 $buttonControl.Height = [double]::NaN
@@ -11650,7 +12410,7 @@ function Show-FlowCellButtonPopoutWindow {
                 try {
                     $alignmentControl = New-FlowCellAlignmentToolControl -Button $button -Width 260 -FontSize ([Math]::Max([double][Math]::Round(12 * $buttonScale, 1), 8))
                     $alignmentControl.Margin = '0'
-                    [void]$container.Children.Add($alignmentControl)
+                    [void]$container.Children.Add((New-FlowCellScaledToolHost -Content $alignmentControl))
                     continue
                 }
                 catch {
@@ -11661,11 +12421,22 @@ function Show-FlowCellButtonPopoutWindow {
                 try {
                     $flattenRevolveControl = New-FlowCellFlattenRevolveToolControl -Button $button -Width 290 -FontSize ([Math]::Max([double][Math]::Round(12 * $buttonScale, 1), 8))
                     $flattenRevolveControl.Margin = '0'
-                    [void]$container.Children.Add($flattenRevolveControl)
+                    [void]$container.Children.Add((New-FlowCellScaledToolHost -Content $flattenRevolveControl))
                     continue
                 }
                 catch {
                     Write-UiLog ('Flatten/revolve control render failed in tool popout: {0} | {1}' -f $_.Exception.Message, $_.InvocationInfo.PositionMessage)
+                }
+            }
+            if (Test-FlowCellSmartAxisToolButton $button) {
+                try {
+                    $smartAxisControl = New-FlowCellSmartAxisToolControl -Button $button -Width ([Math]::Round(292 * $buttonScale, 2)) -FontSize ([Math]::Max([double][Math]::Round(12 * $buttonScale, 1), 8)) -HideTitle
+                    $smartAxisControl.Margin = '0'
+                    [void]$container.Children.Add((New-FlowCellScaledToolHost -Content $smartAxisControl))
+                    continue
+                }
+                catch {
+                    Write-UiLog ('Smart Axis Lock control render failed in tool popout: {0} | {1}' -f $_.Exception.Message, $_.InvocationInfo.PositionMessage)
                 }
             }
 
@@ -12326,6 +13097,19 @@ function Show-FlowCellPanelWindow {
                     Write-UiLog ('Flatten/revolve control render failed in panel window: {0} | {1}' -f $_.Exception.Message, $_.InvocationInfo.PositionMessage)
                 }
             }
+            if (Test-FlowCellSmartAxisToolButton $actionButton) {
+                try {
+                    $smartAxisControl = New-FlowCellSmartAxisToolControl -Button $actionButton -Width ([Math]::Round(292 * $buttonScale, 2)) -FontSize ([Math]::Max([double][Math]::Round(12 * $buttonScale, 1), 8)) -HideTitle
+                    $smartAxisControl.Margin = '0'
+                    $wrappedSmartAxis = New-FlowCellPopoutButtonHost -Content $smartAxisControl -Button $actionButton -ProgramTabId $windowProgramTabId -PanelId ([string]$panel.Id) -ButtonGrid $buttonGrid
+                    [void]$buttonGrid.Children.Add($wrappedSmartAxis)
+                    $panelHasEmbeddedControl = $true
+                    continue
+                }
+                catch {
+                    Write-UiLog ('Smart Axis Lock control render failed in panel window: {0} | {1}' -f $_.Exception.Message, $_.InvocationInfo.PositionMessage)
+                }
+            }
 
             $buttonControl = New-Object System.Windows.Controls.Button
             $buttonControl.Width = $buttonWidth
@@ -12787,18 +13571,51 @@ function Start-Ui {
         $menu = New-Object System.Windows.Controls.ContextMenu
         $renameItem = New-Object System.Windows.Controls.MenuItem
         $renameItem.Header = 'Rename'
+        $editDescriptionItem = New-Object System.Windows.Controls.MenuItem
+        $editDescriptionItem.Header = 'Edit Description'
         $deleteItem = New-Object System.Windows.Controls.MenuItem
         $deleteItem.Header = 'Delete'
         $renameItem.Add_Click({
             Invoke-UiSafe 'Rename button failed.' {
                 $currentTag = $buttonControl.Tag
                 $buttonData = $currentTag.Button
-                $programTabData = $currentTag.ProgramTab
+                $programTabData = if ($currentTag.PSObject.Properties['ProgramTab']) { $currentTag.ProgramTab } else { $null }
+                if ($null -eq $programTabData -and $currentTag.PSObject.Properties['ProgramTabId']) {
+                    $programTabData = Get-FlowCellProgramTab -ProgramTabId ([int]$currentTag.ProgramTabId)
+                }
                 $panelId = [string]$currentTag.PanelId
                 $newLabel = Show-TextEntryDialog -Title 'Rename Button' -Prompt 'Enter the new button name.' -InitialValue ([string]$buttonData.Label) -AcceptText 'Rename' -OwnerWindow $flowWindow
                 if ([string]::IsNullOrWhiteSpace($newLabel)) { return }
                 if (Rename-FlowCellButton -ProgramTabId ([int]$programTabData.Id) -PanelId $panelId -ButtonId ([string]$buttonData.Id) -NewLabel $newLabel) {
                     if ($refreshAll -is [scriptblock]) { $refreshAll.Invoke() }
+                    if ($setStatus -is [scriptblock]) {
+                        $setStatus.Invoke(('Renamed button to {0}.' -f [string]$newLabel.Trim()))
+                    }
+                }
+            }
+        }.GetNewClosure())
+        $editDescriptionItem.Add_Click({
+            Invoke-UiSafe 'Edit description failed.' {
+                $currentTag = $buttonControl.Tag
+                $buttonData = $currentTag.Button
+                $programTabData = if ($currentTag.PSObject.Properties['ProgramTab']) { $currentTag.ProgramTab } else { $null }
+                if ($null -eq $programTabData -and $currentTag.PSObject.Properties['ProgramTabId']) {
+                    $programTabData = Get-FlowCellProgramTab -ProgramTabId ([int]$currentTag.ProgramTabId)
+                }
+                $panelId = [string]$currentTag.PanelId
+                $initialTooltip = if ($buttonData.PSObject.Properties['CustomTooltip'] -and -not [string]::IsNullOrWhiteSpace([string]$buttonData.CustomTooltip)) {
+                    [string]$buttonData.CustomTooltip
+                }
+                else {
+                    Resolve-FlowCellButtonTooltip -Button $buttonData -ProgramTab $programTabData
+                }
+                $newTooltip = Show-MultiLineTextEntryDialog -Title 'Edit Description' -Prompt 'Enter the description shown when you hover this tool on the main page.' -InitialValue $initialTooltip -AcceptText 'Save' -OwnerWindow $flowWindow
+                if ($null -eq $newTooltip) { return }
+                if (Set-FlowCellButtonCustomTooltip -ProgramTabId ([int]$programTabData.Id) -PanelId $panelId -ButtonId ([string]$buttonData.Id) -NewTooltip ([string]$newTooltip).Trim()) {
+                    if ($refreshAll -is [scriptblock]) { $refreshAll.Invoke() }
+                    if ($setStatus -is [scriptblock]) {
+                        $setStatus.Invoke(('Updated description for {0}.' -f [string]$buttonData.Label))
+                    }
                 }
             }
         }.GetNewClosure())
@@ -12806,7 +13623,10 @@ function Start-Ui {
             Invoke-UiSafe 'Delete button failed.' {
                 $currentTag = $buttonControl.Tag
                 $buttonData = $currentTag.Button
-                $programTabData = $currentTag.ProgramTab
+                $programTabData = if ($currentTag.PSObject.Properties['ProgramTab']) { $currentTag.ProgramTab } else { $null }
+                if ($null -eq $programTabData -and $currentTag.PSObject.Properties['ProgramTabId']) {
+                    $programTabData = Get-FlowCellProgramTab -ProgramTabId ([int]$currentTag.ProgramTabId)
+                }
                 $panelId = [string]$currentTag.PanelId
                 $deleteEntries = @(Get-FlowCellDeleteButtonEntries -ProgramTabId ([int]$programTabData.Id) -PanelId $panelId -ButtonId ([string]$buttonData.Id))
                 if (@($deleteEntries).Count -eq 0) { return }
@@ -12819,12 +13639,39 @@ function Start-Ui {
                 if ($removedAny) {
                     Clear-FlowCellButtonSelection -ProgramTabId ([int]$programTabData.Id) -PanelId $panelId
                     if ($refreshAll -is [scriptblock]) { $refreshAll.Invoke() }
+                    if ($setStatus -is [scriptblock]) {
+                        $setStatus.Invoke(('Deleted {0}.' -f [string]$buttonData.Label))
+                    }
                 }
             }
         }.GetNewClosure())
         [void]$menu.Items.Add($renameItem)
+        [void]$menu.Items.Add($editDescriptionItem)
         [void]$menu.Items.Add($deleteItem)
         $buttonControl.ContextMenu = $menu
+    }
+    $attachMainButtonContextMenu = {
+        param(
+            $ContextTarget,
+            $ActivationTarget = $null
+        )
+
+        if ($null -eq $ContextTarget) { return }
+        & $showButtonContextMenu $ContextTarget
+
+        $openMenu = {
+            param($sender, $eventArgs)
+            if ($ContextTarget.ContextMenu) {
+                $ContextTarget.ContextMenu.PlacementTarget = $ContextTarget
+                $ContextTarget.ContextMenu.IsOpen = $true
+                $eventArgs.Handled = $true
+            }
+        }.GetNewClosure()
+
+        $ContextTarget.Add_PreviewMouseRightButtonUp($openMenu)
+        if ($ActivationTarget -and $ActivationTarget -is [System.Windows.UIElement] -and $ActivationTarget -ne $ContextTarget) {
+            $ActivationTarget.Add_PreviewMouseRightButtonUp($openMenu)
+        }
     }
     $showProgramTabContextMenu = {
         param($programTab)
@@ -12939,6 +13786,7 @@ function Start-Ui {
                     $alignmentControl.Margin = '0'
                     $tooltip = Resolve-FlowCellButtonTooltip -Button $buttonItem -ProgramTab $programTab
                     $wrappedControl = New-FlowCellMainToolWrapper -ProgramTab $programTab -Panel $panel -Button $buttonItem -Content $alignmentControl -Tooltip $tooltip -ButtonGrid $panelButtonGrid -ArrangeModeEnabled (Get-FlowCellMainArrangeModeEnabled) -RefreshAction $refreshAll
+                    & $attachMainButtonContextMenu $wrappedControl $alignmentControl
                     [void]$panelButtonGrid.Children.Add($wrappedControl)
                     continue
                 }
@@ -12952,11 +13800,26 @@ function Start-Ui {
                     $flattenRevolveControl.Margin = '0'
                     $tooltip = Resolve-FlowCellButtonTooltip -Button $buttonItem -ProgramTab $programTab
                     $wrappedControl = New-FlowCellMainToolWrapper -ProgramTab $programTab -Panel $panel -Button $buttonItem -Content $flattenRevolveControl -Tooltip $tooltip -ButtonGrid $panelButtonGrid -ArrangeModeEnabled (Get-FlowCellMainArrangeModeEnabled) -RefreshAction $refreshAll
+                    & $attachMainButtonContextMenu $wrappedControl $flattenRevolveControl
                     [void]$panelButtonGrid.Children.Add($wrappedControl)
                     continue
                 }
                 catch {
                     Write-UiLog ('Flatten/revolve control render failed in main window: {0} | {1}' -f $_.Exception.Message, $_.InvocationInfo.PositionMessage)
+                }
+            }
+            if (Test-FlowCellSmartAxisToolButton $buttonItem) {
+                try {
+                    $smartAxisControl = New-FlowCellSmartAxisToolControl -Button $buttonItem -Width ([Math]::Round(292 * $buttonScale, 2)) -FontSize ([Math]::Max([double][Math]::Round(12 * $buttonScale, 1), 8)) -StatusAction $setStatus -HideTitle
+                    $smartAxisControl.Margin = '0'
+                    $tooltip = Resolve-FlowCellButtonTooltip -Button $buttonItem -ProgramTab $programTab
+                    $wrappedControl = New-FlowCellMainToolWrapper -ProgramTab $programTab -Panel $panel -Button $buttonItem -Content $smartAxisControl -Tooltip $tooltip -ButtonGrid $panelButtonGrid -ArrangeModeEnabled (Get-FlowCellMainArrangeModeEnabled) -RefreshAction $refreshAll
+                    & $attachMainButtonContextMenu $wrappedControl $smartAxisControl
+                    [void]$panelButtonGrid.Children.Add($wrappedControl)
+                    continue
+                }
+                catch {
+                    Write-UiLog ('Smart Axis Lock control render failed in main window: {0} | {1}' -f $_.Exception.Message, $_.InvocationInfo.PositionMessage)
                 }
             }
 
@@ -12978,15 +13841,6 @@ function Start-Ui {
                 ProgramTab = $programTab
                 PanelId = [string]$panel.Id
             }
-            & $showButtonContextMenu $buttonControl
-            $buttonControl.Add_PreviewMouseRightButtonUp({
-                param($sender, $eventArgs)
-                if ($sender.ContextMenu) {
-                    $sender.ContextMenu.PlacementTarget = $sender
-                    $sender.ContextMenu.IsOpen = $true
-                    $eventArgs.Handled = $true
-                }
-            }.GetNewClosure())
             $buttonControl.Add_Click({
                 param($sender, $eventArgs)
                 Invoke-UiSafe 'Button action failed.' {
@@ -13003,6 +13857,7 @@ function Start-Ui {
                 }
             }.GetNewClosure())
             $wrappedButton = New-FlowCellMainToolWrapper -ProgramTab $programTab -Panel $panel -Button $buttonItem -Content $buttonControl -Tooltip $buttonTooltip -ButtonGrid $panelButtonGrid -ArrangeModeEnabled (Get-FlowCellMainArrangeModeEnabled) -RefreshAction $refreshAll
+            & $attachMainButtonContextMenu $wrappedButton $buttonControl
             [void]$panelButtonGrid.Children.Add($wrappedButton)
         }
     }

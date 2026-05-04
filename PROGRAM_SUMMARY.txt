@@ -194,7 +194,7 @@ FlowCellUI.ps1 provides:
 - program-template setup for Illustrator, Blender, Photoshop, Windows, and generic apps
 - a startup checkbox that controls whether FlowCell launches minimized and restores the last pop-out-only layout
 - right-click rename and delete actions on the top program tiles
-- delayed main-page hover help: when the pointer stays over a tool tile for about 2 seconds, FlowCell shows that button's concise description in the main status line
+- delayed main-page hover help: when the pointer stays over a tool tile for about 1 second, FlowCell shows that button's description in a popup tooltip window on the main page and mirrors that text to the main status line
 - Windows-template Files panels now auto-ensure built-in `Update GitHub` and `GitHub Pull` buttons so existing and newly created Windows tabs keep those repo actions available
 
 Windows Git actions note:
@@ -269,6 +269,22 @@ The public example for Blender config now belongs in:
 Blender bridge requests prefer the configured bridge root, but FlowCell now also falls back to installed addon bridge folders under the user's AppData Blender addons path when a stale local bridge path no longer matches the live addon.
 Blender\ScriptBank now includes `custom_lithophane_tool.py`, a FlowCell-ready single-file lithophane action whose default `run_flowcell_action` opens an image picker, creates the DPI-sized plane, and completes the lithophane in one click while still exposing separate top-level `perform_*` helpers.
 Blender wrapper install/sync writes now retry briefly on Windows file locks, downgrade locked-wrapper metadata refreshes to warnings, and surface a normal Add Button status error instead of hard-failing the whole FlowCell window when one `.ps1` wrapper is temporarily in use.
+The live Blender bridge runtime now exposes a universal live-tool runner through `flowcell_bridge.py` with `register_live_tool`, `enable_live_tool`, `disable_live_tool`, `toggle_live_tool`, `is_live_tool_enabled`, and `run_live_tools_tick`, so custom FlowCell tools can share one add-on-owned timer instead of creating separate modal operators.
+Smart Axis Lock is now presented in FlowCell as one embedded utility control (`smart axis lock`) instead of separate `Baseline`/`Live`/`X`/`Y`/`Z` launcher buttons, with one responsive inline row of `Baseline`, `Live`, and X/Y/Z cycle buttons.
+That Smart Axis Lock tool uses the shared live-tool runner: `Baseline` stores the selected-object bounds, `Live` is a normal button that turns red when active, each X/Y/Z button cycles `NONE -> MIN -> MAX -> NONE`, and the registered `smart_axis_lock` tick watches selection/scale changes and re-pins any armed min/max sides.
+The installed Blender add-on now clears the shared live-tool runner during FlowCell add-on register/unregister, so reloading or disabling the add-on stops lingering live timers before Blender restarts or FlowCell re-registers tools.
+The installed Blender add-on runtime `flowcell_actions.py` now also imports `inspect` for its signature-based custom-action dispatcher, so Smart Axis Lock and other custom FlowCell actions do not crash at runtime with `name 'inspect' is not defined` after the dispatcher patch is applied.
+Smart Axis Lock's custom action no longer duplicates `live_enabled` in its result payload, so FlowCell bridge requests for `status`, `start_live`, `stop_live`, and `toggle_live` return cleanly instead of failing before the UI can update the X/Y/Z or Live button states.
+The installed Blender bridge request poller now preserves extra keys from custom action results, so FlowCell Smart Axis requests return full state payloads like `modes`, `active_axes`, `selected`, and `live_enabled` instead of dropping everything except `message` and `display`.
+The FlowCell Smart Axis control now ignores bare bridge replies that only contain `status` and `message`, so optimistic X/Y/Z and Live button state no longer gets reset back to `NONE` when the running Blender add-on has not yet returned a full Smart Axis payload.
+Smart Axis Lock bridge messages now spell out axis mode transitions as `MIN`, `MAX`, or cleared and include a concise status summary, which makes FlowCell-side verification possible even if the running Blender poller is still on an older in-memory build that strips extra response payload keys.
+The FlowCell Smart Axis row now also parses those fallback bridge messages to recover `Live`, `Selected`, and X/Y/Z `NONE`/`MIN`/`MAX` state when structured payload keys are missing, which keeps the actual FlowCell buttons in sync with Blender and fixes stale cases like the row showing `Y .` while the live tool was already at `Y MAX`.
+The Blender Smart Axis launcher metadata now describes the real compact control correctly as `Baseline`, `Live`, and X/Y/Z cycle buttons instead of the older checkbox wording.
+Embedded multi-button FlowCell tools are now hosted through proportional `Viewbox` scaling again in the main window and popout hosts, and Smart Axis is given a stable base width before scaling, so toolsets expand and shrink as one responsive unit instead of stretching individual buttons out of proportion.
+The compact Smart Axis control now renders only the button row itself, with no extra `Selected` or `Armed` text line under the buttons.
+Main-page tool hover is now a universal delayed popup tooltip behavior across regular buttons and embedded tool controls, and Smart Axis uses fuller step-by-step descriptions for `Baseline`, `Live`, and each X/Y/Z state so the user can see what every control does directly from hover text.
+Main-page tool tiles now share one context menu path across both regular buttons and embedded grouped tools, so you can rename, delete, and edit the hover description for tools directly from the main FlowCell page; custom descriptions persist in FlowCell state without replacing the live config fallback for untouched buttons.
+Embedded grouped tools on the main page now also show their tool label above the control, while popout versions remain compact without those added main-page labels.
 
 Repo-safe examples
 ------------------
